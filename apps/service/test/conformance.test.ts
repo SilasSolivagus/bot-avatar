@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
+import type { StylePack } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { assertPackRenders } from "../src/conformance.js";
 import { PackError } from "../src/packs.js";
+
+/**
+ * A synthetic pack with the requested dimensions. Shapes and colours repeat the
+ * builtin entries; only the counts matter to the sweep.
+ */
+function syntheticPack(shapeCount: number, colorCount: number): StylePack {
+  const base = structuredClone(organicBlob);
+  const durations = base.motion.durationMsByFamily;
+  return {
+    ...base,
+    shapes: Array.from({ length: shapeCount }, () => structuredClone(base.shapes[0]!)),
+    palette: Array.from({ length: colorCount }, (_, index) =>
+      structuredClone(base.palette[index % base.palette.length]!),
+    ),
+    motion: {
+      ...base.motion,
+      durationMsByFamily: Array.from(
+        { length: shapeCount },
+        (_, index) => durations[index % durations.length]!,
+      ),
+    },
+  };
+}
 
 describe("assertPackRenders", () => {
   it("renders every family and colour of the builtin pack", () => {
@@ -57,6 +81,92 @@ describe("assertPackRenders", () => {
     ];
     expect(() => assertPackRenders(broken, "last-family")).toThrow(PackError);
     expect(() => assertPackRenders(broken, "last-family")).toThrow(new RegExp(`family ${lastFamily}`));
+  });
+
+  it("renders palette[1] of a 700-shape, 4-colour pack", () => {
+    const broken = syntheticPack(700, 4);
+    (broken.palette[1] as { eye: unknown }).eye = undefined;
+    expect(() => assertPackRenders(broken, "700x4-palette-1")).toThrow(PackError);
+  });
+
+  it("covers every colour of a 700-shape, 4-colour sampled pack", () => {
+    const pack = syntheticPack(700, 4);
+    const result = assertPackRenders(pack, "700x4");
+    expect(result.sampled).toBe(true);
+    expect(result.rendered).toBeLessThanOrEqual(1000);
+    expect(result.uncovered.colors).toEqual([]);
+    for (let color = 0; color < pack.palette.length; color += 1) {
+      const broken = syntheticPack(700, 4);
+      (broken.palette[color] as { eye: unknown }).eye = undefined;
+      expect(() => assertPackRenders(broken, `700x4-colour-${color}`), `colour ${color}`).toThrow(
+        PackError,
+      );
+    }
+  });
+
+  it("covers every shape and colour of a 60-shape, 20-colour sampled pack", () => {
+    const pack = syntheticPack(60, 20);
+    const result = assertPackRenders(pack, "60x20");
+    expect(result.sampled).toBe(true);
+    expect(result.rendered).toBeLessThanOrEqual(1000);
+    expect(result.uncovered).toEqual({ shapes: [], colors: [] });
+
+    for (let color = 0; color < pack.palette.length; color += 1) {
+      const broken = syntheticPack(60, 20);
+      (broken.palette[color] as { eye: unknown }).eye = undefined;
+      expect(() => assertPackRenders(broken, `60x20-colour-${color}`), `colour ${color}`).toThrow(
+        PackError,
+      );
+    }
+    for (let family = 0; family < pack.shapes.length; family += 1) {
+      const broken = syntheticPack(60, 20);
+      (broken.shapes[family] as { outline: unknown }).outline = [
+        [Number.NaN, 0],
+        [0, 0],
+        [0, 10],
+      ];
+      expect(() => assertPackRenders(broken, `60x20-shape-${family}`), `shape ${family}`).toThrow(
+        new RegExp(`family ${family}`),
+      );
+    }
+  });
+
+  it("stays exhaustive for a 10-shape, 11-colour pack", () => {
+    const result = assertPackRenders(syntheticPack(10, 11), "small");
+    expect(result.sampled).toBe(false);
+    expect(result.rendered).toBe(220);
+    expect(result.uncovered).toEqual({ shapes: [], colors: [] });
+  });
+
+  it("reports the exact uncovered shape ranges when shapes exceed the budget", () => {
+    const result = assertPackRenders(syntheticPack(600, 1), "600x1");
+    const expected = [
+      ...Array.from({ length: 99 }, (_, index) => {
+        const at = 6 * index + 5;
+        return { start: at, end: at };
+      }),
+      { start: 598, end: 598 },
+    ];
+    expect(result.sampled).toBe(true);
+    expect(result.rendered).toBe(1000);
+    expect(result.uncovered.colors).toEqual([]);
+    expect(result.uncovered.shapes).toEqual(expected);
+    const uncovered = result.uncovered.shapes.reduce(
+      (total, range) => total + range.end - range.start + 1,
+      0,
+    );
+    expect(uncovered).toBe(100);
+  });
+
+  it("still throws for a break in a late shape of a large pack", () => {
+    const pack = syntheticPack(700, 4);
+    const lastFamily = pack.shapes.length - 1;
+    (pack.shapes[lastFamily] as { outline: unknown }).outline = [
+      [Number.NaN, 0],
+      [0, 0],
+      [0, 10],
+    ];
+    expect(() => assertPackRenders(pack, "late-shape")).toThrow(new RegExp(`family ${lastFamily}`));
   });
 
   it("reaches the last family even when the stride is wider than the palette", () => {

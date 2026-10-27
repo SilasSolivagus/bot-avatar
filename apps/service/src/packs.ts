@@ -35,6 +35,13 @@ function fail(origin: string, path: string, detail: string): never {
   throw new PackError(`${origin}: ${path} ${detail}`);
 }
 
+/** `3-7, 9` for inclusive index ranges, as used in the sampled-conformance warning. */
+function formatRanges(ranges: readonly { start: number; end: number }[]): string {
+  return ranges
+    .map(({ start, end }) => (start === end ? `${start}` : `${start}-${end}`))
+    .join(", ");
+}
+
 function expectObject(value: unknown, origin: string, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     fail(origin, path, "must be an object");
@@ -242,9 +249,17 @@ export function parsePack(candidate: unknown, origin: string): ValidatedPack {
 
   const usable = pack as unknown as StylePack;
   // Exhaustive, not a smoke request: one broken family or colour must fail at startup.
-  const { rendered, sampled } = assertPackRenders(usable, origin);
+  const { rendered, sampled, uncovered } = assertPackRenders(usable, origin);
   if (sampled) {
-    console.warn(`${origin}: pack is large, conformance sampled ${rendered} renders`);
+    const missed: string[] = [];
+    if (uncovered.shapes.length > 0) {
+      missed.push(`uncovered shapes ${formatRanges(uncovered.shapes)}`);
+    }
+    if (uncovered.colors.length > 0) {
+      missed.push(`uncovered colours ${formatRanges(uncovered.colors)}`);
+    }
+    const detail = missed.length > 0 ? `; ${missed.join("; ")}` : "";
+    console.warn(`${origin}: pack is large, conformance sampled ${rendered} renders${detail}`);
   }
 
   return usable as ValidatedPack;

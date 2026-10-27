@@ -81,6 +81,39 @@ describe("parsePack", () => {
     ).toBe(true);
   });
 
+  it("logs the concrete uncovered shape ranges for a sampled pack", () => {
+    const base = builtinPacks()[0]!;
+    const shapes = Array.from({ length: 510 }, (_, index) =>
+      structuredClone(base.shapes[index % base.shapes.length]!),
+    );
+    const sampled = {
+      ...base,
+      shapes,
+      palette: [base.palette[0]!],
+      motion: {
+        ...base.motion,
+        durationMsByFamily: shapes.map(
+          (_, index) =>
+            base.motion.durationMsByFamily[index % base.motion.durationMsByFamily.length]!,
+        ),
+      },
+    };
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
+      warnings.push(line);
+    });
+    try {
+      parsePack(sampled, "/tmp/many-shapes.ts");
+    } finally {
+      warn.mockRestore();
+    }
+    const line = warnings.find((entry) => entry.includes("/tmp/many-shapes.ts"));
+    expect(line).toBeDefined();
+    expect(line).toContain("sampled");
+    expect(line).toMatch(/conformance sampled \d+ renders/);
+    expect(line).toMatch(/uncovered shapes \d+(?:-\d+)?/);
+  });
+
   it("names the file and the missing field", () => {
     const broken = { id: "x", name: "X", version: "1.0.0" };
     expect(() => parsePack(broken, "/tmp/broken.ts")).toThrow(PackError);
