@@ -1,16 +1,11 @@
 import type { StylePack } from "@botavatar/engine";
-import { buildAvatarSpec } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
-import { renderSvg } from "@botavatar/svg";
 import { createJiti } from "jiti";
 import { isAbsolute, resolve } from "node:path";
+import { assertPackRenders } from "./conformance.js";
+import { PackError } from "./pack-error.js";
 
-export class PackError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PackError";
-  }
-}
+export { PackError };
 
 const REQUIRED = ["id", "name", "version", "viewBox", "shapes", "palette", "eyes", "motion"] as const;
 
@@ -33,8 +28,8 @@ function requiredText(pack: Partial<StylePack>, field: "id" | "name" | "version"
 
 /**
  * Throws unless `candidate` is a usable pack; the message names the origin and the field.
- * A pack is usable only if a smoke request can actually build and render from it, so a
- * type-broken pack fails at startup instead of answering 500 to every request.
+ * A pack is usable only if every body and colour it can produce renders, so a type-broken
+ * pack fails at startup instead of answering 500 to the requests that hit that combination.
  */
 export function validatePack(candidate: unknown, origin: string): StylePack {
   if (typeof candidate !== "object" || candidate === null) {
@@ -75,11 +70,10 @@ export function validatePack(candidate: unknown, origin: string): StylePack {
   }
 
   const usable = pack as StylePack;
-  try {
-    renderSvg(buildAvatarSpec(usable, "smoke"), { size: 32 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new PackError(`${origin}: failed to build and render a smoke avatar (${message})`);
+  // Exhaustive, not a smoke request: one broken family or colour must fail at startup.
+  const { rendered, sampled } = assertPackRenders(usable, origin);
+  if (sampled) {
+    console.warn(`${origin}: pack is large, conformance sampled ${rendered} renders`);
   }
 
   return usable;

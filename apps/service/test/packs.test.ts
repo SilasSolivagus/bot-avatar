@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { builtinPacks, loadPack, PackError, validatePack } from "../src/packs.js";
 
 const clay = fileURLToPath(new URL("./fixtures/clay-pack.ts", import.meta.url));
@@ -54,6 +54,28 @@ describe("loadPack", () => {
 describe("validatePack", () => {
   it("accepts the builtin pack", () => {
     expect(validatePack(builtinPacks()[0], "builtin").id).toBe("organic-blob");
+  });
+
+  it("warns when a pack is too large to render exhaustively", () => {
+    const base = builtinPacks()[0]!;
+    const huge = {
+      ...base,
+      palette: Array.from({ length: 60 }, () => base.palette[0]!),
+    };
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
+      warnings.push(line);
+    });
+    try {
+      validatePack(huge, "/tmp/huge.ts");
+    } finally {
+      warn.mockRestore();
+    }
+    expect(
+      warnings.some(
+        (line) => line.includes("sampled") && line.includes("1000") && line.includes("/tmp/huge.ts"),
+      ),
+    ).toBe(true);
   });
 
   it("names the file and the missing field", () => {
@@ -119,7 +141,7 @@ describe("validatePack metadata", () => {
   });
 });
 
-describe("validatePack smoke", () => {
+describe("validatePack render conformance", () => {
   const base = builtinPacks()[0]!;
   const rejects = (patch: Record<string, unknown>) => {
     expect(() => validatePack({ ...base, ...patch }, "/tmp/typed.ts")).toThrow(PackError);
