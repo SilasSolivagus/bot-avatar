@@ -252,7 +252,7 @@ URL 可复现：`/gallery?pack=organic-blob&ids=a,b,c&size=160`。技术栈：Vi
 
 ## 14. 非目标
 
-- 不做 AI 生图、不做图库、不做用户上传。
+- 不做 AI 生图、不做图库。用户上传图片**原样透传**（`imageUrl`），引擎不处理、不裁剪、不代理。
 - 不存储头像图片；不引入数据库。
 - 不在首版做"用户手动编辑形状"的编辑器（画廊只做浏览与调试）。
 - 不绑定任何 UI 框架；不给 React 专供组件（渲染器返回字符串，React 由使用方自行包装）。
@@ -273,3 +273,125 @@ URL 可复现：`/gallery?pack=organic-blob&ids=a,b,c&size=160`。技术栈：Vi
 - 从上游抽取时**不要**把 React 组件、Prisma 模型、bot 运行状态一起搬过来——它们在上游有价值，在这里是负担。
 - 眼睛的坐标系最容易出错：上游 `viewBox` 是 `-60 -60 120 120`，眼睛是两条 7×24、圆角 3.5 的矩形，整组按 `seed % 9 - 4` 旋转。抽取时先把这三件事写成测试。
 - 所有 pack 必须通过同一套 conformance 测试（第 6 节）；新增 pack 只需要新增数据与一个索引文件。
+
+## 17. 拆什么：精确清单
+
+抽取原则：**只搬"算"的部分，"显示"与"存储"留在宿主项目**。下表逐文件给出处置。
+
+| 上游文件 | 处置 | 说明 |
+| --- | --- | --- |
+| `packages/core/src/avatar-shape.ts` | **搬** → `engine/seed.ts` + `style-packs/organic-blob/src/shapes.ts` | 哈希/家族/归并进引擎；10 组轮廓点进 pack。纯函数，无依赖 |
+| `packages/core/src/bot-avatar-colors.ts` | **搬** → `style-packs/organic-blob/src/palette.ts` | 删掉 `parseBotAvatarValue` 的 import，只保留 id/name/light/dark/eyeColor |
+| `packages/core/src/avatar-motion.ts` | **搬并改造** → `engine/motion.ts` | 去掉 `"worklet"` 指令；编排公式归引擎，时长归 pack。Reanimated 适配由宿主自己做 |
+| `packages/core/src/avatar-clips.ts` | **搬**（M2）→ `engine/clips.ts` | 首版只做位移/缩放/旋转，完整 clip 库后置 |
+| `packages/core/src/avatar-life.ts` | **不搬** | 依赖 bot 运行状态（`run-state`），属应用层 |
+| `apps/mobile/components/bot-avatar.tsx` | **只搬几何** → `renderer-svg` | 保留 `Svg`/`G` 结构、`viewBox`、眼睛矩形、旋转公式；React 外壳留在宿主 |
+| `packages/ui-web/src/bot-avatar.tsx` | **只搬几何** → `renderer-svg` | 同上；两份几何合并为一份，这是抽取的主要收益 |
+| `packages/db/src/bot-avatar-choice.ts` | **搬并剥离** → `engine/assignment.ts` | 去掉 Prisma/CUID，只留 `pickLeastUsed` 与可注入的 `Random` |
+| `packages/db/src/bot-avatar-balance*` | **搬** → `engine/distinctness.ts` | 用于"撞脸"统计，纯逻辑 |
+| `packages/contracts/src/bot-avatar*.ts` | **搬成兼容层** → `compat/legacy.ts` | 保留对 `#8B5CF6`、`#8B5CF6::shape_3`、图片 URL/data URI 的解析，见第 18 节 |
+| 上游 4 个 avatar 测试 | **改写** → `engine` 与 pack 的纯断言 | 去掉 React/运行时依赖 |
+
+**必搬的只有约 6 个源文件**（shape、colors、motion、clips、choice、contracts 解析），其余是外壳。这也是"能拆"的底气：核心耦合只在 4 个点上（第 18 节）。
+
+## 18. 让 Shoalwork 直接替换：四个耦合点与接管路径
+
+上游的头像模型是**存储型**：bot 上存一个字符串，创建时分配，用户可在头像工作室里改颜色/形状/上传图片。新项目的模型是**派生型**：由身份算出。两者用 `override` 打通。
+
+### 18.1 必须支持的兼容输入
+
+```ts
+export type AvatarOverride =
+  | { colorId: string }                                  // "#8B5CF6" 或预设色 id
+  | { colorId: string; shapeIndex: number }              // "#8B5CF6::shape_3"
+  | { imageUrl: string };                                // https:// 或 data:image/...
+
+export function parseLegacyAvatarValue(raw: string): AvatarOverride | null;
+
+export function buildAvatarSpec(
+  pack: StylePack,
+  identity: string,
+  override?: AvatarOverride,
+): AvatarSpec;
+```
+
+规则：
+
+- 有 `imageUrl` → 直接透传，引擎不生成图形（渲染器返回 `<image href>`）。
+- 有 `shapeIndex` → 覆盖 `family`，但仍用 `look` 归并做区分度统计。
+- 只有颜色 → `color` 取该色，形状仍由哈希决定。
+- 无 override → 完全由身份派生。
+
+### 18.2 接管四步（每步独立可验收）
+
+| 步骤 | 做什么 | 验收 |
+| --- | --- | --- |
+| A 并行运行 | 宿主同时装旧渲染与新包，用真实 bot 数据跑对照 | 抽取 200 个真实头像值（含图片、含 `::shape_N`），新旧输出**逐字节一致**；有差异的列入白名单并说明原因 |
+| B 切换渲染 | web 与 mobile 的组件改为调用新包，组件外壳保留 | 视觉回归截图零差异；`organic-blob` pack 的轮廓点必须与上游完全一致 |
+| C 删除重复 | 删掉 web/mobile 两份几何，删除 `contracts` 里的旧解析（改由 `compat/legacy` 提供） | 全仓搜索 `organicAvatarPath` 只剩一处定义 |
+| D 存储策略 | 新 bot 不写头像值（纯派生）；老 bot 保留原值作为 override | 新建 bot 的数据库记录里没有头像字段；老 bot 渲染不变 |
+
+**A 步是不可跳过的门禁**：没有"200 个真实值逐字节一致"这条证据，B 步之后的所有视觉问题都会被误判成新包的 bug 或旧代码的 bug。
+
+### 18.3 视觉一致性为何能成立
+
+上游几何是**固定不动的常量**：10 组轮廓点、两个 7×24 圆角 3.5 的矩形眼睛、`rotate(seed % 9 - 4)`、`viewBox="-60 -60 120 120"`。只要 `organic-blob` pack 原样复制这些常量、`avatarSeed` 的字符串哈希算法一致（`hash = hash*31 + charCode` 同款），同一身份的输出必然一致。这是可以用快照锁死的，不需要靠肉眼。
+
+### 18.4 宿主需要自己保留的东西
+
+`avatar-life`（idle/working/thinking 状态机）、头像工作室 UI、Reanimated 动画适配、bot 数据读写。新项目只提供"值 → spec → SVG"，不接管状态与存储。
+
+## 19. 任何用户怎么用：三种入口
+
+### 19.1 库（三行接入）
+
+```ts
+import { organicBlob } from "@shoalwork/avatar-pack-organic-blob";
+import { buildAvatarSpec, renderSvg } from "@shoalwork/avatar";
+
+const svg = renderSvg(buildAvatarSpec(organicBlob, user.id), { size: 96 });
+```
+
+无需配置、无需注册、无需服务端；`user.id` 可以是邮箱、UUID、昵称，任意字符串。
+
+### 19.2 自带风格包（任何人都能做自己的头像风格）
+
+```ts
+import type { StylePack } from "@shoalwork/avatar";
+
+export const geometric: StylePack = {
+  id: "geometric", name: "Geometric", version: "1.0.0",
+  viewBox: "-60 -60 120 120",
+  shapes: [...],          // 任意轮廓点集
+  palette: [...],         // 任意配色
+  eyes: {...},            // 任意眼睛几何
+  motion: {...},
+  assignment: "least-used",
+};
+```
+
+配套一个**一致性校验 CLI**，让第三方 pack 也能自证合规：
+
+```bash
+npx @shoalwork/avatar-conformance ./my-pack.ts
+# 检查：确定性、分布、保留家族、look 归并、与渲染器一致；并输出一张对照图到 ./conformance.png
+```
+
+没有这个 CLI，"任何人都能调用"就只是一句口号——第三方无法知道自己做的 pack 对不对。
+
+### 19.3 服务与画廊
+
+```bash
+npx @shoalwork/avatar-service --port 8787
+# GET /v1/avatar/alice.svg?pack=organic-blob&size=128
+npx @shoalwork/avatar-gallery --pack ./my-pack.ts
+```
+
+服务与画廊都必须支持 `--pack` 加载**本地风格包文件**，否则又变成只能看内置风格。
+
+## 20. 新增验收标准
+
+- **兼容性**：200 个真实旧头像值（含图片与 `::shape_N`）经 `parseLegacyAvatarValue` + `buildAvatarSpec` + `renderSvg` 后，与旧渲染逐字节一致；差异项列入 `docs/compat-deltas.md` 并逐条说明。
+- **可替换性**：宿主完成第 18.2 的 A–D 后，全仓 `organicAvatarPath` 只剩一处定义；新建 bot 不写头像字段。
+- **第三方可用性**：在空目录里 `npm i @shoalwork/avatar @shoalwork/avatar-pack-organic-blob`，按 19.1 三行代码能在 5 分钟内出图；`avatar-conformance` 对故意做成非确定性的 pack 必须报错。
+- **pack 可加载**：服务与画廊都能通过 `--pack` 加载仓库外的 pack 文件并正常出图。
