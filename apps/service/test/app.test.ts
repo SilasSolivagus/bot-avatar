@@ -12,3 +12,14 @@ describe("health", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
   });
 });
+
+describe("GET /v1/packs", () => {
+  it("lists id, name, version and family count", async () => {
+    const res = await app.request("/v1/packs");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { packs: Array<Record<string, unknown>> };
+    expect(body.packs).toEqual([
+      { id: "organic-blob", name: "Organic Blob", version: "1.0.0", familyCount: 10 },
+    ]);
+  });
+});

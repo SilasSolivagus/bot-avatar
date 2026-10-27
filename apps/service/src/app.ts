@@ -14,5 +14,16 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
 
   app.get("/health", (c) => c.json({ ok: true, packs: byId.size }));
 
+  app.get("/v1/packs", (c) =>
+    c.json({
+      packs: packs.map((pack) => ({
+        id: pack.id,
+        name: pack.name,
+        version: pack.version,
+        familyCount: pack.shapes.length,
+      })),
+    }),
+  );
+
   return app;
 }
