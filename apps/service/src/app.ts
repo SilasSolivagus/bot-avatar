@@ -39,6 +39,20 @@ function readSize(raw: string | undefined): number | null {
 }
 
 /**
+ * True when `If-None-Match` selects the current representation. The header is a comma-separated
+ * list of opaque tags; `*` selects any representation and a `W/` prefix means weak comparison,
+ * which still matches on the opaque tag value (RFC 9110 §13.1.2).
+ */
+function matchesIfNoneMatch(header: string | undefined, tag: string): boolean {
+  if (!header) return false;
+  return header.split(",").some((part) => {
+    const candidate = part.trim();
+    if (candidate === "*") return true;
+    return (candidate.startsWith("W/") ? candidate.slice(2) : candidate) === tag;
+  });
+}
+
+/**
  * The path that is safe to log. An avatar path never contributes its identity: a parsed one
  * becomes `<hash8>.<kind>`, and a malformed one under the avatar prefix stays opaque. Any
  * other route is already public.
@@ -113,7 +127,7 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       kind === "svg"
         ? `"${pack.id}@${pack.version}:${identityHash(identity)}:${size}:${state}"`
         : etagFor(pack, identity);
-    if (c.req.header("if-none-match") === tag) {
+    if (matchesIfNoneMatch(c.req.header("if-none-match"), tag)) {
       return c.body(null, 304, { ETag: tag, "Cache-Control": CACHE_CONTROL });
     }
 

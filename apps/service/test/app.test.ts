@@ -116,6 +116,39 @@ describe("conditional requests", () => {
     expect(second.headers.get("content-type")).toBeNull();
   });
 
+  it("answers 304 when the if-none-match list contains the current tag", async () => {
+    const first = await app.request("/v1/avatar/alice.svg");
+    const etag = first.headers.get("etag")!;
+    const second = await app.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": `"other", ${etag}, W/"another"` },
+    });
+    expect(second.status).toBe(304);
+    expect(second.headers.get("etag")).toBe(etag);
+  });
+
+  it("answers 304 for the * wildcard", async () => {
+    const res = await app.request("/v1/avatar/alice.svg", { headers: { "if-none-match": "*" } });
+    expect(res.status).toBe(304);
+    expect(await res.text()).toBe("");
+  });
+
+  it("answers 304 for a weak tag around the current tag", async () => {
+    const first = await app.request("/v1/avatar/alice.svg");
+    const etag = first.headers.get("etag")!;
+    const second = await app.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": `W/${etag}` },
+    });
+    expect(second.status).toBe(304);
+  });
+
+  it("answers 200 when a list of tags does not contain the current tag", async () => {
+    const res = await app.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": '"one", W/"two"' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("<svg");
+  });
+
   it("answers 200 when the etag differs", async () => {
     const res = await app.request("/v1/avatar/alice.svg", {
       headers: { "if-none-match": '"organic-blob@0.0.0:0000000000000000"' },
