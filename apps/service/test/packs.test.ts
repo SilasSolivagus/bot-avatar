@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { builtinPacks, loadPack, PackError, validatePack } from "../src/packs.js";
 
 const clay = fileURLToPath(new URL("./fixtures/clay-pack.ts", import.meta.url));
+const named = fileURLToPath(new URL("./fixtures/named-pack.ts", import.meta.url));
+const fields = fileURLToPath(new URL("./fixtures/fields-pack.ts", import.meta.url));
 
 describe("loadPack", () => {
   it("loads a TypeScript pack with no build step", async () => {
@@ -10,6 +12,18 @@ describe("loadPack", () => {
     expect(pack.id).toBe("clay");
     expect(pack.shapes).toHaveLength(1);
     expect(pack.surface?.highlight?.opacity).toBe(0.45);
+  });
+
+  it("loads a pack from a named `pack` export", async () => {
+    const pack = await loadPack(named);
+    expect(pack.id).toBe("named");
+    expect(pack.shapes).toHaveLength(1);
+  });
+
+  it("loads a pack whose module namespace is the pack object", async () => {
+    const pack = await loadPack(fields);
+    expect(pack.id).toBe("fields");
+    expect(pack.shapes).toHaveLength(1);
   });
 
   it("returns a fresh object per call", async () => {
