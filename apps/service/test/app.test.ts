@@ -87,6 +87,121 @@ describe("GET /v1/avatar/:identity.svg", () => {
   });
 });
 
+describe("conditional requests", () => {
+  it("returns the same bytes and the same etag twice", async () => {
+    const first = await app.request("/v1/avatar/alice.svg?size=96");
+    const second = await app.request("/v1/avatar/alice.svg?size=96");
+    expect(await first.text()).toBe(await second.text());
+    expect(second.headers.get("etag")).toBe(first.headers.get("etag"));
+  });
+
+  it("carries an immutable cache header", async () => {
+    const res = await app.request("/v1/avatar/alice.svg");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  it("quotes the etag and names the pack and the identity hash", async () => {
+    const res = await app.request("/v1/avatar/alice.svg");
+    expect(res.headers.get("etag")).toMatch(/^"organic-blob@1\.0\.0:[0-9a-f]{16}:128:idle"$/);
+  });
+
+  it("answers 304 with no body when the etag matches", async () => {
+    const first = await app.request("/v1/avatar/alice.svg");
+    const etag = first.headers.get("etag")!;
+    const second = await app.request("/v1/avatar/alice.svg", { headers: { "if-none-match": etag } });
+    expect(second.status).toBe(304);
+    expect(await second.text()).toBe("");
+    expect(second.headers.get("etag")).toBe(etag);
+    expect(second.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(second.headers.get("content-type")).toBeNull();
+  });
+
+  it("answers 200 when the etag differs", async () => {
+    const res = await app.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": '"organic-blob@0.0.0:0000000000000000"' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("gives different identities different etags", async () => {
+    const a = await app.request("/v1/avatar/alice.svg");
+    const b = await app.request("/v1/avatar/bob.svg");
+    expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
+  });
+
+  it("gives different sizes and states different svg etags", async () => {
+    const base = await app.request("/v1/avatar/alice.svg");
+    const small = await app.request("/v1/avatar/alice.svg?size=64");
+    const working = await app.request("/v1/avatar/alice.svg?state=working");
+    expect(small.headers.get("etag")).not.toBe(base.headers.get("etag"));
+    expect(working.headers.get("etag")).not.toBe(base.headers.get("etag"));
+  });
+
+  it("does not answer 304 for a json request when the svg etag matches", async () => {
+    const svg = await app.request("/v1/avatar/alice.svg");
+    const res = await app.request("/v1/avatar/alice.json", {
+      headers: { "if-none-match": svg.headers.get("etag")! },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /v1/avatar/:identity.json", () => {
+  it("returns the spec the svg was built from", async () => {
+    const res = await app.request("/v1/avatar/alice.json");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const spec = (await res.json()) as { packId: string; identity: string; path: string };
+    expect(spec.packId).toBe("organic-blob");
+    expect(spec.identity).toBe("alice");
+    expect(spec.path.startsWith("M")).toBe(true);
+  });
+
+  it("keeps a stable etag of its own, independent of render options", async () => {
+    const first = await app.request("/v1/avatar/alice.json");
+    const second = await app.request("/v1/avatar/alice.json");
+    expect(second.headers.get("etag")).toBe(first.headers.get("etag"));
+    expect(first.headers.get("etag")).toMatch(/^"organic-blob@1\.0\.0:[0-9a-f]{16}"$/);
+  });
+
+  it("ignores size and state in the json etag", async () => {
+    const first = await app.request("/v1/avatar/alice.json");
+    const second = await app.request("/v1/avatar/alice.json?size=64&state=working");
+    expect(second.headers.get("etag")).toBe(first.headers.get("etag"));
+  });
+
+  it("404s a bare identity with no suffix", async () => {
+    expect((await app.request("/v1/avatar/alice")).status).toBe(404);
+  });
+});
+
+describe("robustness", () => {
+  it("answers 503 for avatar requests when no packs are configured", async () => {
+    const empty = createApp({ packs: [] });
+    const res = await empty.request("/v1/avatar/alice.svg");
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("no_packs");
+  });
+
+  it("answers unrouted requests with a json 404", async () => {
+    const res = await app.request("/nope");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("not_found");
+  });
+
+  it("answers a bare avatar identity with a json 404", async () => {
+    const res = await app.request("/v1/avatar/alice");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("not_found");
+  });
+});
+
 describe("parseIdentity", () => {
   it("splits the suffix from the right, so dots stay in the identity", () => {
     expect(parseIdentity("/v1/avatar/jane.doe.svg")).toEqual({

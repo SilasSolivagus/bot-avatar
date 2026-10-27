@@ -2,7 +2,7 @@ import type { StylePack } from "@botavatar/engine";
 import { buildAvatarSpec } from "@botavatar/engine";
 import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
-import { CACHE_CONTROL, errorBody, etagFor } from "./respond.js";
+import { CACHE_CONTROL, errorBody, etagFor, identityHash } from "./respond.js";
 
 export type Logger = (line: string) => void;
 
@@ -64,6 +64,10 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       return c.json(errorBody("bad_identity", `identity must be 1-${MAX_IDENTITY} characters`), 400);
     }
 
+    if (packs.length === 0) {
+      return c.json(errorBody("no_packs", "no packs are configured"), 503);
+    }
+
     const url = new URL(c.req.url);
     const packId = url.searchParams.get("pack") ?? packs[0]!.id;
     const pack = byId.get(packId);
@@ -83,17 +87,28 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       return c.json(errorBody("bad_state", "state must be idle or working"), 400);
     }
 
+    // The SVG varies with size and state, so its tag carries them; the JSON does not, so it does not.
+    const tag =
+      kind === "svg"
+        ? `"${pack.id}@${pack.version}:${identityHash(identity)}:${size}:${state}"`
+        : etagFor(pack, identity);
+    if (c.req.header("if-none-match") === tag) {
+      return c.body(null, 304, { ETag: tag, "Cache-Control": CACHE_CONTROL });
+    }
+
     const spec = buildAvatarSpec(pack, identity);
 
     if (kind === "svg") {
       return c.body(renderSvg(spec, { size, state }), 200, {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        ETag: etagFor(pack, identity),
+        ETag: tag,
         "Cache-Control": CACHE_CONTROL,
       });
     }
-    return c.json(spec, 200, { ETag: etagFor(pack, identity), "Cache-Control": CACHE_CONTROL });
+    return c.json(spec, 200, { ETag: tag, "Cache-Control": CACHE_CONTROL });
   });
+
+  app.notFound((c) => c.json(errorBody("not_found", "no such route"), 404));
 
   return app;
 }
