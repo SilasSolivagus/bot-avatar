@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { avatarSeed } from "../src/seed.js";
-import { fixtureRows } from "./helpers.js";
 
 describe("avatarSeed", () => {
-  it("matches the recorded seeds for every fixture identity", () => {
-    for (const row of fixtureRows) {
-      expect(avatarSeed(row.identity)).toBe(row.seed);
-    }
-  });
-
   it("is deterministic and ignores call order", () => {
     const first = avatarSeed("research");
     avatarSeed("health");

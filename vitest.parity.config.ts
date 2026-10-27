@@ -11,12 +11,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: [
-      "packages/engine/test/spec.test.ts",
-      "packages/engine/test/outline.test.ts",
-      "packages/engine/test/seed.test.ts",
-      "packages/engine/test/family.test.ts",
-    ],
+    include: ["parity/**/*.test.ts"],
     environment: "node",
   },
 });

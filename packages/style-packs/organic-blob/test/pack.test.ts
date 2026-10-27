@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { outlinePath, phaseForSeed } from "@botavatar/engine";
-import { fixtureRows } from "../../../engine/test/helpers.js";
 import { eyes } from "../src/eyes.js";
 import { organicBlob } from "../src/index.js";
 import { palette } from "../src/palette.js";
@@ -59,17 +57,5 @@ describe("organic blob pack", () => {
 
   it("declares no surface, so it renders flat", () => {
     expect(organicBlob.surface).toBeUndefined();
-  });
-
-  it("reproduces every recorded upstream path", () => {
-    for (const row of fixtureRows) {
-      const shape = shapes[row.family]!;
-      expect(
-        outlinePath(shape.outline, {
-          phase: phaseForSeed(row.seed),
-          smoothingPasses: shape.smoothingPasses,
-        }),
-      ).toBe(row.path);
-    }
   });
 });

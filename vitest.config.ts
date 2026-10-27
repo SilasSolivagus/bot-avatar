@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -13,6 +13,7 @@ export default defineConfig({
   },
   test: {
     include: ["packages/**/test/**/*.test.ts"],
+    exclude: [...configDefaults.exclude, "parity/**"],
     environment: "node",
     passWithNoTests: true,
   },

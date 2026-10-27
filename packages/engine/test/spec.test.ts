@@ -2,23 +2,6 @@ import { describe, expect, it } from "vitest";
 import { organicBlob } from "../../style-packs/organic-blob/src/index.js";
 import { colorIndex, fnv1a } from "../src/color.js";
 import { buildAvatarSpec } from "../src/spec.js";
-import { fixtureRows } from "./helpers.js";
-
-/** Recorded from Rakazo a0e5781: identity -> colour id, one per palette entry plus a repeat. */
-const COLOR_PAIRS: ReadonlyArray<readonly [string, string]> = [
-  ["fixture-0", "green"],
-  ["fixture-1", "gray"],
-  ["fixture-2", "orange"],
-  ["fixture-3", "gray"],
-  ["fixture-4", "magenta"],
-  ["fixture-5", "yellow"],
-  ["fixture-6", "gray"],
-  ["fixture-7", "green"],
-  ["fixture-8", "brown"],
-  ["fixture-9", "yellow"],
-  ["fixture-10", "yellow"],
-  ["fixture-11", "white"],
-];
 
 describe("fnv1a", () => {
   it("is a 32-bit unsigned FNV-1a hash", () => {
@@ -30,12 +13,6 @@ describe("fnv1a", () => {
 });
 
 describe("colorIndex", () => {
-  it("matches the recorded colour for each identity", () => {
-    for (const [identity, expected] of COLOR_PAIRS) {
-      expect(organicBlob.palette[colorIndex(identity, organicBlob.palette.length)]?.id).toBe(expected);
-    }
-  });
-
   it("stays inside the palette", () => {
     for (let index = 0; index < 500; index++) {
       const value = colorIndex(`bot_${index}`, organicBlob.palette.length);
@@ -46,16 +23,6 @@ describe("colorIndex", () => {
 });
 
 describe("buildAvatarSpec", () => {
-  it("matches every recorded fixture row", () => {
-    for (const row of fixtureRows) {
-      const spec = buildAvatarSpec(organicBlob, row.identity);
-      expect(spec.seed).toBe(row.seed);
-      expect(spec.family).toBe(row.family);
-      expect(spec.look).toBe(row.look);
-      expect(spec.path).toBe(row.path);
-    }
-  });
-
   it("derives eye rotation and duration from the seed", () => {
     const spec = buildAvatarSpec(organicBlob, "fixture-0");
     expect(spec.eyeRotation).toBe(2);
