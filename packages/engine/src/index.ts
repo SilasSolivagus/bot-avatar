@@ -7,3 +7,4 @@ export type {
 } from "./spec.js";
 export { avatarSeed } from "./seed.js";
 export { avatarAssignableLooks, avatarFamily, avatarLook } from "./family.js";
+export { outlinePath, phaseForSeed } from "./outline.js";
