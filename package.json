@@ -7,6 +7,7 @@
   },
   "packageManager": "pnpm@10.33.2",
   "scripts": {
+    "pretest": "pnpm build",
     "test": "vitest run",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "build": "pnpm --filter @botavatar/engine build && pnpm --filter @botavatar/pack-organic-blob build && pnpm --filter @botavatar/svg build",

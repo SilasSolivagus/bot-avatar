@@ -21,9 +21,8 @@ draws the same one. No dependencies, no DOM, ESM only.
 
 ## Status
 
-Milestone M0, under construction: the workspace and toolchain are in place; the
-package sources land in later tasks. No HTTP service, no gallery, no PNG yet —
-see `docs/specs/2026-10-27-bot-avatar-spec.md`.
+Milestone M0: library only. No HTTP service, no gallery, no PNG, no legacy
+value compatibility yet — see `docs/specs/2026-10-27-bot-avatar-spec.md`.
 
 ## Licence
 

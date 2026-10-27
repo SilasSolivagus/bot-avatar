@@ -26,4 +26,10 @@ the same commit.
 
 ## Status
 
-Pending — filled in by Task 10, Step 4.
+Run on 2026-10-27 against fixture `parity/fixtures/upstream.json`
+(commit `a0e5781`): 110/110 identities matched on `seed`, `family`, `look`
+and `path`; 12/12 colour pairs matched on `color.id`; `eyeRotation` and
+`durationMs` matched the recorded values.
+
+This was a one-time check. The fixture is frozen; the harness stays opt-in
+(`pnpm parity`) and is not part of `pnpm test`.
