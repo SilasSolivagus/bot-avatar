@@ -70,6 +70,7 @@ function specFor(
     eyeRotation: (seed % pack.eyes.rotation.modulo) - pack.eyes.rotation.spread,
     durationMs: pack.motion.durationMsByFamily[family] ?? 1800,
     motionAmplitude: pack.motion.amplitude,
+    clip: pack.motion.clipByFamily[family] ?? "breathe",
     viewBox: pack.viewBox,
     surface: pack.surface,
   };

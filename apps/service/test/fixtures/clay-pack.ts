@@ -8,7 +8,7 @@ const pack: StylePack = {
   shapes: [{ outline: [[0, -40], [40, 0], [0, 40], [-40, 0]], smoothingPasses: 0 }],
   palette: [{ id: "clay", name: "Clay", light: "#FFD8A8", dark: "#E8590C", eye: "#3B2A1A" }],
   eyes: { eyes: [{ kind: "ellipse", cx: -12, cy: 0, rx: 4, ry: 9 }], rotation: { modulo: 5, spread: 2 } },
-  motion: { durationMsByFamily: [1500], amplitude: 1 },
+  motion: { durationMsByFamily: [1500], amplitude: 1, clipByFamily: ["breathe"] },
   assignment: "hash-only",
   surface: {
     stops: [

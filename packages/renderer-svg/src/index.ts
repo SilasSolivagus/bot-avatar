@@ -1,4 +1,5 @@
-import type { AvatarSpec } from "@botavatar/engine";
+import { clipFrame } from "@botavatar/engine";
+import type { AvatarSpec, ClipFrame } from "@botavatar/engine";
 
 export interface RenderOptions {
   size: number;
@@ -28,11 +29,53 @@ function eyeMarkup(spec: AvatarSpec): string {
     .join("");
 }
 
+/**
+ * Quarter steps, not just the endpoints and midpoint: shake, tilt and look-round are
+ * neutral at 0 and 0.5, so sampling only those would emit an animation that never
+ * moves. 0 and 1 are rest, so the loop has no seam.
+ */
+const FRAME_STEPS = [0, 0.25, 0.5, 0.75, 1] as const;
+
+/** Fixed decimal output: deterministic bytes, and `-0` is never emitted. */
+function number(value: number): string {
+  const rounded = Number(value.toFixed(3));
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+function keyframes(
+  name: string,
+  spec: AvatarSpec,
+  transform: (frame: ClipFrame) => string,
+): string {
+  return `@keyframes ${name}{${FRAME_STEPS.map((progress) => {
+    const frame = clipFrame(spec.clip, progress, spec.motionAmplitude);
+    return `${number(progress * 100)}%{transform:${transform(frame)}}`;
+  }).join("")}}`;
+}
+
 function workingStyle(spec: AvatarSpec, id: string): string {
+  const body = `${id}-body`;
+  const eyes = `${id}-eyes`;
+  const timing = `${spec.durationMs}ms ease-in-out infinite`;
   return (
-    `<style>@keyframes ${id}-work{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}` +
-    `.${id}-body{transform-origin:center;animation:${id}-work ${spec.durationMs}ms ease-in-out infinite}` +
-    `@media (prefers-reduced-motion: reduce){.${id}-body{animation:none}}</style>`
+    `<style>` +
+    keyframes(
+      body,
+      spec,
+      (frame) =>
+        `translate(0px, ${number(frame.translateY)}px) scale(${number(frame.scale)}) rotate(${number(frame.rotate)}deg)`,
+    ) +
+    keyframes(
+      eyes,
+      spec,
+      (frame) => `translate(${number(frame.eyeOffsetX)}px, 0px) scaleY(${number(frame.eyeScaleY)})`,
+    ) +
+    // Without `transform-box: fill-box` the origin resolves against the SVG viewport,
+    // so the body and eyes rotate around the wrong point and fly off.
+    `.${body}{transform-box: fill-box;transform-origin: center;animation:${body} ${timing}}` +
+    `.${eyes}{transform-box: fill-box;transform-origin: center;animation:${eyes} ${timing}}` +
+    `@media (prefers-reduced-motion: reduce){.${body},.${eyes}{animation:none}}` +
+    `</style>`
   );
 }
 
@@ -117,8 +160,10 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
     `<g${working ? ` class="${id}-body"` : ""}${shadowed}>` +
     `<path d="${escapeAttribute(spec.path)}" fill="url(#${id}-fill)" />` +
     shine.shape +
+    // The static tilt stays on the outer group; the clip's eye channels animate an
+    // inner group, so the two transforms never overwrite each other.
     `<g transform="rotate(${spec.eyeRotation})" fill="${escapeAttribute(spec.color.eye)}">` +
-    eyeMarkup(spec) +
+    (working ? `<g class="${id}-eyes">${eyeMarkup(spec)}</g>` : eyeMarkup(spec)) +
     `</g></g>` +
     grainMarkup(spec, id) +
     `</svg>`

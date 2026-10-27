@@ -96,6 +96,9 @@ describe("parsePack", () => {
           (_, index) =>
             base.motion.durationMsByFamily[index % base.motion.durationMsByFamily.length]!,
         ),
+        clipByFamily: shapes.map(
+          (_, index) => base.motion.clipByFamily[index % base.motion.clipByFamily.length]!,
+        ),
       },
     };
     const warnings: string[] = [];
@@ -216,6 +219,22 @@ describe("parsePack field types", () => {
   it("rejects a non-finite motion amplitude", () => {
     const broken = { ...base, motion: { ...base.motion, amplitude: Number.POSITIVE_INFINITY } };
     expect(() => parsePack(broken, "x")).toThrow(/motion\.amplitude/);
+  });
+
+  it("rejects a clip name outside the library, naming the origin and index", () => {
+    const clipByFamily: string[] = base.motion.clipByFamily.map(() => "breathe");
+    clipByFamily[2] = "moonwalk";
+    const broken = { ...base, motion: { ...base.motion, clipByFamily } };
+    expect(() => parsePack(broken, "/tmp/bad-clip.ts")).toThrow(PackError);
+    expect(() => parsePack(broken, "/tmp/bad-clip.ts")).toThrow(/\/tmp\/bad-clip\.ts/);
+    expect(() => parsePack(broken, "/tmp/bad-clip.ts")).toThrow(/motion\.clipByFamily\[2\]/);
+  });
+
+  it("rejects a clip table that does not match the shapes, naming origin and table", () => {
+    const broken = { ...base, motion: { ...base.motion, clipByFamily: ["breathe"] } };
+    expect(() => parsePack(broken, "/tmp/bad-clip-table.ts")).toThrow(PackError);
+    expect(() => parsePack(broken, "/tmp/bad-clip-table.ts")).toThrow(/\/tmp\/bad-clip-table\.ts/);
+    expect(() => parsePack(broken, "/tmp/bad-clip-table.ts")).toThrow(/motion\.clipByFamily/);
   });
 
   it("rejects a viewBox that is not four finite numbers", () => {

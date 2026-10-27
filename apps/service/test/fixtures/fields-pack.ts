@@ -18,5 +18,9 @@ export const eyes: StylePack["eyes"] = {
   eyes: [{ kind: "ellipse", cx: -12, cy: 0, rx: 4, ry: 9 }],
   rotation: { modulo: 5, spread: 2 },
 };
-export const motion: StylePack["motion"] = { durationMsByFamily: [1500], amplitude: 1 };
+export const motion: StylePack["motion"] = {
+  durationMsByFamily: [1500],
+  amplitude: 1,
+  clipByFamily: ["breathe"],
+};
 export const assignment: StylePack["assignment"] = "hash-only";

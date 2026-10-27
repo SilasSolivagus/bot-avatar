@@ -1,4 +1,5 @@
-import type { StylePack } from "@botavatar/engine";
+import { CLIP_NAMES } from "@botavatar/engine";
+import type { ClipName, StylePack } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { createJiti } from "jiti";
 import { isAbsolute, resolve } from "node:path";
@@ -164,6 +165,17 @@ function assertMotion(value: unknown, origin: string, familyCount: number): void
     expectPositiveNumber(duration, origin, `motion.durationMsByFamily[${index}]`);
   });
   expectFiniteNumber(motion.amplitude, origin, "motion.amplitude");
+  const clips = expectArray(motion.clipByFamily, origin, "motion.clipByFamily");
+  if (clips.length !== familyCount) {
+    throw new PackError(
+      `${origin}: motion.clipByFamily has ${clips.length} entries for ${familyCount} shapes`,
+    );
+  }
+  clips.forEach((clip, index) => {
+    if (typeof clip !== "string" || !CLIP_NAMES.includes(clip as ClipName)) {
+      fail(origin, `motion.clipByFamily[${index}]`, `must be one of ${CLIP_NAMES.join(", ")}`);
+    }
+  });
 }
 
 /**

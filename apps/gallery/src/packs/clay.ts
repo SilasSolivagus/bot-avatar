@@ -18,7 +18,11 @@ export const clay: StylePack = {
     eyes: [{ kind: "ellipse", cx: -13, cy: 0, rx: 4, ry: 9 }, { kind: "ellipse", cx: 13, cy: 0, rx: 4, ry: 9 }],
     rotation: { modulo: 5, spread: 2 },
   },
-  motion: { durationMsByFamily: [1500, 1700], amplitude: 1 },
+  motion: {
+    durationMsByFamily: [1500, 1700],
+    amplitude: 1,
+    clipByFamily: ["breathe", "sway"],
+  },
   assignment: "hash-only",
   surface: {
     // No `stops`: a constant stop table would override the palette's light/dark and

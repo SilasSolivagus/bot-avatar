@@ -1,4 +1,5 @@
 import { colorIndex } from "./color.js";
+import type { ClipName } from "./clips.js";
 import { avatarFamily, avatarLook } from "./family.js";
 import { outlinePath, phaseForSeed } from "./outline.js";
 import { avatarSeed } from "./seed.js";
@@ -53,6 +54,8 @@ export interface StylePack {
   motion: {
     durationMsByFamily: readonly number[];
     amplitude: number;
+    /** One clip per family, so neighbours on a wall do not move in lockstep. */
+    clipByFamily: readonly ClipName[];
   };
   assignment: "least-used" | "hash-only";
   /** Material vocabulary. Absent means a flat two-stop gradient. */
@@ -72,6 +75,8 @@ export interface AvatarSpec {
   eyeRotation: number;
   durationMs: number;
   motionAmplitude: number;
+  /** The loop the renderer plays for this family. */
+  clip: ClipName;
   surface?: Surface;
   /** Viewport the path and eyes are drawn in. */
   viewBox: string;
@@ -88,6 +93,7 @@ export function buildAvatarSpec(pack: StylePack, identity: string): AvatarSpec {
   });
   const color = pack.palette[colorIndex(identity, pack.palette.length)]!;
   const durationMs = pack.motion.durationMsByFamily[family] ?? pack.motion.durationMsByFamily[0]!;
+  const clip = pack.motion.clipByFamily[family] ?? "breathe";
 
   return {
     packId: pack.id,
@@ -102,6 +108,7 @@ export function buildAvatarSpec(pack: StylePack, identity: string): AvatarSpec {
     eyeRotation: (seed % pack.eyes.rotation.modulo) - pack.eyes.rotation.spread,
     durationMs,
     motionAmplitude: pack.motion.amplitude,
+    clip,
     surface: pack.surface,
     viewBox: pack.viewBox,
   };

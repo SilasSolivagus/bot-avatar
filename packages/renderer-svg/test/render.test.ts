@@ -48,6 +48,46 @@ describe("renderSvg", () => {
     expect(working).toContain(`${spec.durationMs}ms`);
   });
 
+  it("animates the body and a separate eye group inside the static eye tilt", () => {
+    const blink = renderSvg({ ...spec, clip: "blink" }, { size: 64, state: "working" });
+    expect(blink).toContain("scaleY(");
+    expect(blink).toMatch(/class="[^"]*-eyes"/);
+    expect(blink).toContain("transform-box: fill-box");
+    expect(blink).toContain("transform-origin: center");
+
+    const look = renderSvg({ ...spec, clip: "look-round" }, { size: 64, state: "working" });
+    expect(look).toContain("translate(5px, 0px)");
+    expect(look).toContain("translate(-5px, 0px)");
+
+    // The static tilt stays on the outer group; the eyes animate on an inner one.
+    expect(look).toMatch(
+      new RegExp(
+        `<g transform="rotate\\(${spec.eyeRotation}\\)" fill="[^"]*"><g class="[^"]*-eyes">`,
+      ),
+    );
+  });
+
+  it("samples quarter points, so clips that are neutral at the midpoint still move", () => {
+    const working = renderSvg({ ...spec, clip: "shake" }, { size: 64, state: "working" });
+    expect(working).toContain("25%{transform:");
+    expect(working).toContain("50%{transform:");
+    expect(working).toContain("75%{transform:");
+  });
+
+  it("scales the emitted keyframes with the spec's motionAmplitude", () => {
+    const full = renderSvg({ ...spec, clip: "bob", motionAmplitude: 1 }, {
+      size: 64,
+      state: "working",
+    });
+    const half = renderSvg({ ...spec, clip: "bob", motionAmplitude: 0.5 }, {
+      size: 64,
+      state: "working",
+    });
+    expect(full).not.toBe(half);
+    expect(full).toContain("translate(0px, -5px)");
+    expect(half).toContain("translate(0px, -2.5px)");
+  });
+
   it("defaults to the idle state and rounds a fractional size", () => {
     expect(renderSvg(spec, { size: 64 })).toBe(renderSvg(spec, { size: 64, state: "idle" }));
     expect(renderSvg(spec, { size: 31.6 })).toContain('width="32"');
