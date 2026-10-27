@@ -14,7 +14,7 @@ That buys four things:
 
 - **No storage, no migration.** The avatar is a pure function of a string you already have.
 - **Every client agrees.** Server, browser and mobile compute the same SVG from the same id.
-- **Stable by construction.** Same pack version + same identity = byte-identical output, so responses can be cached forever.
+- **Stable by construction.** Same pack content + same identity = byte-identical output, so responses can be cached forever.
 - **Swappable looks.** The algorithm is fixed; the style lives in a pack you can replace.
 
 ## Install
@@ -86,7 +86,7 @@ Logs never contain the identity, only a hash prefix.
 | `path` | The body as an SVG path string, already smoothed. |
 | `eyes`, `eyeRotation` | Eye geometry plus the whole group's tilt. |
 | `durationMs` | The animation loop for this body. |
-| `packId`, `packVersion` | Cache key material: output only changes when these do. |
+| `packId`, `packVersion` | Human-readable pack identity; the cache tag is derived from the pack content hash, not these. |
 | `viewBox`, `surface` | Viewport, and optional material for the renderer. |
 
 ## API
@@ -180,7 +180,7 @@ const look = pickLeastUsed(looks, looksAlreadyUsed, random);
 | | |
 | --- | --- |
 | Deterministic | No `Date.now`, `Math.random`, `crypto.randomUUID` anywhere in the engine or renderer. Verified across separate processes with different `TZ`/`LANG`. |
-| Stable | Same pack version + identity means byte-identical spec and SVG. |
+| Stable | Same pack content + identity means byte-identical spec and SVG. |
 | Dependency-free | `dependencies` and `peerDependencies` are empty in all three packages. |
 | Isomorphic | ESM only; no DOM, no Node builtins. |
 | Small | engine about 1.7 KB gzip, renderer about 1.5 KB gzip, pack data separate. |
@@ -190,7 +190,7 @@ const look = pickLeastUsed(looks, looksAlreadyUsed, random);
 
 ```bash
 pnpm install
-pnpm test        # builds, then runs 15 files / 135 tests
+pnpm test        # builds, then runs 19 files / 190 tests
 pnpm parity      # replays the frozen upstream snapshot (7 tests)
 pnpm typecheck
 pnpm build
@@ -216,7 +216,7 @@ docs/                          spec, plan, benchmark and parity evidence, previe
 
 **M0 — library.** Shipped: engine, the `organic-blob` pack, the SVG renderer, and the tests that pin them down.
 
-**M1 — HTTP service.** Shipped: `apps/service`, a Hono app on Node 22 with `/v1/packs`, SVG and JSON avatar routes, `ETag`/`304` caching, redacted logging and a CLI (`--port`, `--host`, `--pack`). Every request recomputes the avatar; the measured p95 is 14.3 ms at concurrency 100, see [the benchmark](docs/m1-benchmark.md).
+**M1 — HTTP service.** Shipped: `apps/service`, a Hono app on Node 22 with `/v1/packs`, SVG and JSON avatar routes, `ETag`/`304` caching, redacted logging and a CLI (`--port`, `--host`, `--pack`). Every request recomputes the avatar; the M1 measured p95 was 14.3 ms at concurrency 100, see [the benchmark](docs/m1-benchmark.md) for the M1.5 figures.
 
 Not built yet, in order: a gallery for comparing packs, PNG rasterisation, a second pack, and a compatibility layer for legacy stored avatar values.
 

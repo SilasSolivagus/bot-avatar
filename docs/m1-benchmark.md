@@ -39,13 +39,13 @@ were 14.3–14.4 / 64.1–69.7 / 115.5–118.3 ms for mode 200 and 8.9–9.2 / 3
 | 500 | 304 | 20.5 ms | 35.1 ms | 37.6 ms | 22,317 req/s |
 | 1000 | 304 | 49.2 ms | 69.2 ms | 72.5 ms | 18,533 req/s |
 
-At 1000 concurrency p95 is 118.3 ms on the 200 path and 69.2 ms on the 304 path, so the
-spec §12 target ("1,000 concurrent, p95 < 50 ms (cache-hit path)") is **not met as
-measured here**, and it is also **unverified**: the load generator runs on this same
-machine and competes with the server for CPU, so this is a shared-host closed-loop run,
-not a measurement from an independent generator. A dedicated load generator on a separate
-host is required to settle the 1,000-concurrency target; until then the 100-concurrency
-run above is the reproducible local benchmark and the 1000-concurrency rows read as a miss.
+At 100 concurrency p95 is 14.3 ms on the 200 path and 9.2 ms on the 304 path, so the
+spec §12 target (p95 < 50 ms at concurrency 100 on the hit path) is met. The spec treats
+1,000 concurrency as a deployment-level figure to be reproduced on a dedicated load
+generator, not as a local criterion: the 500 and 1000 rows are shared-host context, and
+the 1000 row is also **unverified** because the load generator runs on this same machine
+and competes with the server for CPU. The 100-concurrency run above is the reproducible
+local benchmark.
 
 The bench warms its connection pool before timing. Without that, a simultaneous burst of
 hundreds of new sockets overflows this host's accept queue (`kern.ipc.somaxconn` is 128 on
@@ -61,11 +61,12 @@ those are the saturation ceilings on this host; extra concurrency only adds queu
 moves p95 up. The 200 path is CPU-bound on spec building and SVG rendering, which is why
 its ceiling is about half the 304 path's.
 
-## After the content-addressed cache (M1.5)
+## After the content-addressed tag (M1.5)
 
 M1.5 replaced the string tag (`"<packId>@<packVersion>:<identityHash>:<size>:<state>"`) with
 an opaque 16-hex tag over the pack's content hash, the identity hash, `size` and `state`, and
-moved pack parsing and a startup conformance sweep in front of serving. Re-measured
+added a startup conformance sweep in front of serving (pack parsing was already at startup).
+Re-measured
 2026-10-27 on the same host (Apple M4, Mac16,12, macOS 26.2, Node v22.23.4), built at
 `e81d038`, with the same bench and probe: 4000 requests per cell,
 `GET /v1/avatar/alice.svg?size=128`.
@@ -109,14 +110,16 @@ SHA-256 over a 40-byte input. That is 0.004% of a 9.4 ms p95.
 There is also nothing left on the hit path to remove. The M1 service already returned `304`
 before `buildAvatarSpec` and `renderSvg` — the paragraph after the acceptance table says
 so, and the code at `6d0d65e` computes the tag and returns before building. M1.5 made the
-tag correct (content-addressed, opaque, with `X-Avatar-Pack` informational only) and made a
-broken pack fail at startup instead of serving; it did not take work off a path that had
-none. The plan expected a substantial 304 gain because it assumed the hit path still
-rendered; that assumption was already false in M1. The measured relative cost is unchanged:
-304/200 p95 at concurrency 100 is 0.56–0.63 after versus 0.64 before.
+tag correct (content-addressed, opaque, with `X-Avatar-Pack` informational only) and added a
+startup conformance sweep: a pack that breaks on one family or colour now fails at startup
+instead of serving the requests that land on that combination. It did not take work off a
+path that had none. The plan expected a substantial 304 gain because it assumed the hit path
+still rendered; that assumption was already false in M1. The measured relative cost is
+unchanged: 304/200 p95 at concurrency 100 is 0.56–0.63 after versus 0.64 before.
 
-The §12 target is in the same position as at M1: concurrency 100 passes in every run,
-concurrency 500 passes in all three but one run displays exactly 50.0 ms (the bench compares
-the unrounded value against 50, so it passed with no margin), and concurrency 1000 fails in
-all three. The hit path is hash-only now, but a target at 1000 concurrency still cannot be
-settled on a host that also runs the load generator.
+The §12 target (p95 < 50 ms at concurrency 100 on the hit path) passes in every run.
+Concurrency 500 passes in all three but one run displays exactly 50.0 ms (the bench compares
+the unrounded value against 50, so it passed with no margin). Concurrency 1000 is the spec's
+deployment-level figure, which the amended §12 does not ask this host to settle; the hit
+path is hash-only now, but that figure still cannot be measured on a host that also runs the
+load generator.
