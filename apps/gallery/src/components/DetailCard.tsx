@@ -99,9 +99,11 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
     <section className="detail panel" aria-label="Identity detail">
       <div className="detail-head">
         <h2>Detail</h2>
-        <span className="detail-id">{spec.identity}</span>
+        <span className="detail-id notranslate" translate="no">
+          {spec.identity}
+        </span>
       </div>
-      <p className="muted detail-caption">
+      <p className="muted detail-caption notranslate" translate="no">
         #{spec.family} · look #{spec.look} · {spec.color.name}
       </p>
       <div className="detail-art" dangerouslySetInnerHTML={{ __html: svg }} />
@@ -137,7 +139,11 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
       </div>
       {!png && (
         <p className="hint">
-          PNG is rasterised by the service. Add <code>?service=http://host:port</code> to enable it.
+          PNG is rasterised by the service. Add{" "}
+          <code translate="no" className="notranslate">
+            ?service=http://host:port
+          </code>{" "}
+          to enable it.
         </p>
       )}
 
@@ -156,7 +162,18 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
             </button>
           ))}
         </div>
-        <span className="muted">{motion === "working" ? `animating ${spec.durationMs}ms` : "static"}</span>
+        <span className="muted">
+          {motion === "working" ? (
+            <>
+              animating{" "}
+              <span translate="no" className="notranslate">
+                {spec.durationMs}ms
+              </span>
+            </>
+          ) : (
+            "static"
+          )}
+        </span>
       </div>
 
       {copyState === "fallback" && (
@@ -176,7 +193,7 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
         </div>
       )}
 
-      <pre className="spec-json">{JSON.stringify(spec, null, 2)}</pre>
+      <pre className="spec-json notranslate" translate="no">{JSON.stringify(spec, null, 2)}</pre>
     </section>
   );
 }

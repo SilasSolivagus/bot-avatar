@@ -75,7 +75,8 @@ export function IdentityInput({ pack, onAdd, notice }: IdentityInputProps) {
             <button
               key={sample.identity}
               type="button"
-              className="chip"
+              className="chip notranslate"
+              translate="no"
               title={`Sample for look #${sample.look}`}
               onClick={() => onAdd(sample.identity)}
             >

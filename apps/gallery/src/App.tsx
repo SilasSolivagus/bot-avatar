@@ -106,8 +106,18 @@ export function App() {
         <div className="brand">
           <h1>Bot Avatar Gallery</h1>
           <p className="muted">
-            {entry.label} · {state.ids.length} of {MAX_IDS} identities · {looks.length} assignable
-            looks · {state.size}px
+            {entry.label} ·{" "}
+            <span translate="no" className="notranslate">
+              {state.ids.length} of {MAX_IDS} identities
+            </span>{" "}
+            ·{" "}
+            <span translate="no" className="notranslate">
+              {looks.length} assignable looks
+            </span>{" "}
+            ·{" "}
+            <span translate="no" className="notranslate">
+              {state.size}px
+            </span>
           </p>
         </div>
         <PackPicker packs={PACKS} value={state.pack} onChange={changePack} />

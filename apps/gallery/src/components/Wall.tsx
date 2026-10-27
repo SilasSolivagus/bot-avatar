@@ -53,19 +53,19 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
     <>
       <div className={`balance ${result.ok ? "ok" : "bad"}`} role="status" aria-label={balanceLabel}>
         <strong>{result.ok ? "Balanced" : "Unbalanced"}</strong>
-        <span>
+        <span translate="no" className="notranslate">
           max {result.max} vs allowed {result.allowed}
         </span>
-        <span className="balance-detail">
+        <span className="balance-detail notranslate" translate="no">
           {specs.length} identities across {looks.length} assignable looks
         </span>
         {result.missing.length > 0 && (
-          <span className="balance-detail">
+          <span className="balance-detail notranslate" translate="no">
             missing looks {result.missing.map((look) => `#${look}`).join(", ")}
           </span>
         )}
         {result.reserved > 0 && (
-          <span className="balance-detail">
+          <span className="balance-detail notranslate" translate="no">
             reserved look present · {result.reserved}{" "}
             {result.reserved === 1 ? "identity is" : "identities are"} outside the assignment pool
           </span>
@@ -87,7 +87,7 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
             onClick={() => onSelect(spec.identity)}
           >
             <span className="cell-art" dangerouslySetInnerHTML={{ __html: svg }} />
-            <span className="cell-caption">
+            <span className="cell-caption notranslate" translate="no">
               #{spec.family} · look #{spec.look} · {spec.color.name}
             </span>
           </button>
@@ -98,10 +98,14 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
         <div className="strip-head">
           <h2>One per look</h2>
           <p className="metric">
-            <strong>
+            <strong translate="no" className="notranslate">
               {spread.distinct} / {spread.total}
             </strong>{" "}
-            distinct looks · {Math.round(spread.rate * 100)}% repeat
+            distinct looks ·{" "}
+            <span translate="no" className="notranslate">
+              {Math.round(spread.rate * 100)}%
+            </span>{" "}
+            repeat
           </p>
         </div>
         <div className="strip-row">
@@ -116,7 +120,7 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
               onClick={() => onSelect(spec.identity)}
             >
               <span className="cell-art" dangerouslySetInnerHTML={{ __html: svg }} />
-              <span className="cell-caption">
+              <span className="cell-caption notranslate" translate="no">
                 look #{spec.look} · {spec.color.name}
               </span>
             </button>
