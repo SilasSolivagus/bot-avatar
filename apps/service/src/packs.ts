@@ -1,5 +1,7 @@
 import type { StylePack } from "@botavatar/engine";
+import { buildAvatarSpec } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
+import { renderSvg } from "@botavatar/svg";
 import { createJiti } from "jiti";
 import { isAbsolute, resolve } from "node:path";
 
@@ -12,7 +14,28 @@ export class PackError extends Error {
 
 const REQUIRED = ["id", "name", "version", "viewBox", "shapes", "palette", "eyes", "motion"] as const;
 
-/** Throws unless `candidate` is a usable pack; the message names the origin and the field. */
+/** The id lands in ETags and logs, so it is restricted to URL- and header-safe characters. */
+const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+/** C0 controls, DEL and C1 controls can break a log line or an HTTP header value. */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
+
+function requiredText(pack: Partial<StylePack>, field: "id" | "name" | "version", origin: string): string {
+  const value = pack[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new PackError(`${origin}: ${field} must be a non-empty string`);
+  }
+  if (CONTROL_CHARACTER.test(value)) {
+    throw new PackError(`${origin}: ${field} contains a control character`);
+  }
+  return value;
+}
+
+/**
+ * Throws unless `candidate` is a usable pack; the message names the origin and the field.
+ * A pack is usable only if a smoke request can actually build and render from it, so a
+ * type-broken pack fails at startup instead of answering 500 to every request.
+ */
 export function validatePack(candidate: unknown, origin: string): StylePack {
   if (typeof candidate !== "object" || candidate === null) {
     throw new PackError(`${origin}: a pack must be an object`);
@@ -22,6 +45,17 @@ export function validatePack(candidate: unknown, origin: string): StylePack {
   if (missing.length > 0) {
     throw new PackError(`${origin}: missing ${missing.join(", ")}`);
   }
+
+  const id = requiredText(pack, "id", origin);
+  requiredText(pack, "name", origin);
+  const version = requiredText(pack, "version", origin);
+  if (!ID_PATTERN.test(id)) {
+    throw new PackError(`${origin}: id must match ${ID_PATTERN.source}`);
+  }
+  if (!VERSION_PATTERN.test(version)) {
+    throw new PackError(`${origin}: version must match ${VERSION_PATTERN.source}`);
+  }
+
   if (!Array.isArray(pack.shapes) || pack.shapes.length === 0) {
     throw new PackError(`${origin}: shapes must be a non-empty array`);
   }
@@ -39,7 +73,16 @@ export function validatePack(candidate: unknown, origin: string): StylePack {
   if (!Array.isArray(pack.eyes?.eyes) || pack.eyes.eyes.length === 0) {
     throw new PackError(`${origin}: eyes.eyes must be a non-empty array`);
   }
-  return pack as StylePack;
+
+  const usable = pack as StylePack;
+  try {
+    renderSvg(buildAvatarSpec(usable, "smoke"), { size: 32 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new PackError(`${origin}: failed to build and render a smoke avatar (${message})`);
+  }
+
+  return usable;
 }
 
 /**
