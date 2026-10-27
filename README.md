@@ -178,7 +178,7 @@ const look = pickLeastUsed(looks, looksAlreadyUsed, random);
 
 ```bash
 pnpm install
-pnpm test        # builds, then runs 15 files / 115 tests
+pnpm test        # builds, then runs 15 files / 135 tests
 pnpm parity      # replays the frozen upstream snapshot (7 tests)
 pnpm typecheck
 pnpm build
@@ -204,7 +204,7 @@ docs/                          spec, plan, benchmark and parity evidence, previe
 
 **M0 — library.** Shipped: engine, the `organic-blob` pack, the SVG renderer, and the tests that pin them down.
 
-**M1 — HTTP service.** Shipped: `apps/service`, a Hono app on Node 22 with `/v1/packs`, SVG and JSON avatar routes, `ETag`/`304` caching, redacted logging and a CLI (`--port`, `--host`, `--pack`). Every request recomputes the avatar; the measured p95 is 13.0 ms at concurrency 100, see [the benchmark](docs/m1-benchmark.md).
+**M1 — HTTP service.** Shipped: `apps/service`, a Hono app on Node 22 with `/v1/packs`, SVG and JSON avatar routes, `ETag`/`304` caching, redacted logging and a CLI (`--port`, `--host`, `--pack`). Every request recomputes the avatar; the measured p95 is 14.3 ms at concurrency 100, see [the benchmark](docs/m1-benchmark.md).
 
 Not built yet, in order: a gallery for comparing packs, PNG rasterisation, a second pack, and a compatibility layer for legacy stored avatar values.
 
