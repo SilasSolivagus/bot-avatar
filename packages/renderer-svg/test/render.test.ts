@@ -88,5 +88,18 @@ describe("renderSvg", () => {
     expect(svg).toContain("feTurbulence");
     expect(svg).toContain('fill="url(#av-organic-blob-');
     expect(svg).toContain("<ellipse");
+
+    const clip = svg.match(/<clipPath id="([^"]+)">(.*?)<\/clipPath>/);
+    expect(clip).not.toBeNull();
+    const clipId = clip![1]!;
+    expect(clip![2]).toContain(`<path d="${spec.path}" />`);
+
+    const grain = svg.match(/<rect [^>]*filter="url\(#[A-Za-z0-9_-]+-grain\)"[^>]*\/>/);
+    expect(grain).not.toBeNull();
+    expect(grain![0]).toContain(`clip-path="url(#${clipId})"`);
+
+    const shine = svg.match(/<ellipse [^>]*fill="url\(#[A-Za-z0-9_-]+-shine\)"[^>]*\/>/);
+    expect(shine).not.toBeNull();
+    expect(shine![0]).toContain(`clip-path="url(#${clipId})"`);
   });
 });

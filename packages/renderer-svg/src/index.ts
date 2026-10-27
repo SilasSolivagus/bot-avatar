@@ -60,8 +60,13 @@ function highlight(spec: AvatarSpec, id: string): { defs: string; shape: string 
       `<stop offset="0%" stop-color="#FFFFFF" stop-opacity="${shine.opacity}" />` +
       `<stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />` +
       `</radialGradient>`,
-    shape: `<ellipse cx="${shine.cx}" cy="${shine.cy}" rx="${shine.r}" ry="${shine.r}" fill="url(#${id}-shine)" />`,
+    shape: `<ellipse cx="${shine.cx}" cy="${shine.cy}" rx="${shine.r}" ry="${shine.r}" clip-path="url(#${id}-clip)" fill="url(#${id}-shine)" />`,
   };
+}
+
+/** A clip path around the body, so surface material never paints outside it. */
+function clipPathDef(spec: AvatarSpec, id: string): string {
+  return `<clipPath id="${id}-clip"><path d="${escapeAttribute(spec.path)}" /></clipPath>`;
 }
 
 function shadowDefs(spec: AvatarSpec, id: string): string {
@@ -89,7 +94,7 @@ function grainMarkup(spec: AvatarSpec, id: string): string {
     `<filter id="${id}-grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" />` +
     `<feColorMatrix type="saturate" values="0" /></filter>` +
     `<rect x="${x}" y="${y}" width="${width}" height="${height}"` +
-    ` filter="url(#${id}-grain)" opacity="${texture.opacity}" />`
+    ` clip-path="url(#${id}-clip)" filter="url(#${id}-grain)" opacity="${texture.opacity}" />`
   );
 }
 
@@ -100,12 +105,15 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
   const working = state === "working";
   const shine = highlight(spec, id);
   const shadowed = spec.surface?.shadow ? ` filter="url(#${id}-shadow)"` : "";
+  const clipped = Boolean(
+    spec.surface?.highlight || (spec.surface?.texture && spec.surface.texture.kind !== "none"),
+  );
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeAttribute(spec.viewBox)}"` +
     ` width="${pixels}" height="${pixels}" aria-hidden="true">` +
     (working ? workingStyle(spec, id) : "") +
-    `<defs>${fillDefs(spec, id)}${shine.defs}${shadowDefs(spec, id)}</defs>` +
+    `<defs>${fillDefs(spec, id)}${shine.defs}${shadowDefs(spec, id)}${clipped ? clipPathDef(spec, id) : ""}</defs>` +
     `<g${working ? ` class="${id}-body"` : ""}${shadowed}>` +
     `<path d="${escapeAttribute(spec.path)}" fill="url(#${id}-fill)" />` +
     shine.shape +
