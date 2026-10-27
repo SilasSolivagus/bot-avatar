@@ -19,6 +19,14 @@ draws the same one. No dependencies, no DOM, ESM only.
 - `@botavatar/pack-organic-blob` — the first style pack: ten bodies, eleven colours.
 - `@botavatar/svg` — spec → SVG string.
 
+## Assignment
+
+There is no engine-level assigner: `avatarAssignableLooks` is the primitive, and
+hosts enforce the pool. The identity hash may still land on a reserved family —
+that is deliberate, so existing identities keep their avatar. Anything handing
+out new identities must draw from `avatarAssignableLooks`, which drops reserved
+families and merges equivalent looks.
+
 ## Status
 
 Milestone M0: library only. No HTTP service, no gallery, no PNG, no legacy
