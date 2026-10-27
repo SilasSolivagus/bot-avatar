@@ -44,6 +44,13 @@ describe("pickLeastUsed", () => {
 });
 
 describe("avatarSampleIdentity", () => {
+  it("takes a family index and returns a stable identity for it", () => {
+    const identity = avatarSampleIdentity(organicBlob, 3);
+    expect(identity).toMatch(/^look-3-\d+$/);
+    expect(avatarFamily(avatarSeed(identity), organicBlob.shapes)).toBe(3);
+    expect(avatarSampleIdentity(organicBlob, 3)).toBe(identity);
+  });
+
   it("lands on the requested family for every family", () => {
     for (let family = 0; family < organicBlob.shapes.length; family++) {
       const identity = avatarSampleIdentity(organicBlob, family);
@@ -57,5 +64,16 @@ describe("avatarSampleIdentity", () => {
       avatarSampleIdentity(organicBlob, family),
     );
     expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  it("throws instead of searching forever for a family outside the pack", () => {
+    expect(() => avatarSampleIdentity(organicBlob, organicBlob.shapes.length)).toThrow(RangeError);
+    expect(() => avatarSampleIdentity(organicBlob, organicBlob.shapes.length)).toThrow(
+      `family must be an integer in [0, ${organicBlob.shapes.length}); received ${organicBlob.shapes.length}`,
+    );
+    expect(() => avatarSampleIdentity(organicBlob, -1)).toThrow(RangeError);
+    expect(() => avatarSampleIdentity(organicBlob, -1)).toThrow(/received -1/);
+    expect(() => avatarSampleIdentity(organicBlob, 1.5)).toThrow(RangeError);
+    expect(() => avatarSampleIdentity(organicBlob, Number.NaN)).toThrow(RangeError);
   });
 });
