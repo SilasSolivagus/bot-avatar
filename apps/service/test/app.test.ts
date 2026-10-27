@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildAvatarSpec } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
+import { renderSvg } from "@botavatar/svg";
 import { createApp, parseIdentity } from "../src/app.js";
 import { packContentHash } from "../src/pack-hash.js";
 
@@ -335,5 +337,49 @@ describe("parseIdentity", () => {
     expect(parseIdentity("/v1/avatar/")).toBeNull();
     expect(parseIdentity("/v1/packs")).toBeNull();
     expect(parseIdentity("/v1/avatar/%E0%A4%A.svg")).toBeNull();
+  });
+});
+
+describe("a cache hit renders nothing", () => {
+  it("answers 304 without building a spec or an svg", async () => {
+    const build = vi.fn(buildAvatarSpec);
+    const render = vi.fn(renderSvg);
+    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build, render });
+
+    const first = await spyApp.request("/v1/avatar/alice.svg?size=96");
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag")!;
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+
+    const second = await spyApp.request("/v1/avatar/alice.svg?size=96", {
+      headers: { "if-none-match": etag },
+    });
+    expect(second.status).toBe(304);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("still renders when the tag does not match", async () => {
+    const build = vi.fn(buildAvatarSpec);
+    const render = vi.fn(renderSvg);
+    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build, render });
+    const res = await spyApp.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": '"0123456789abcdef"' },
+    });
+    expect(res.status).toBe(200);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render for the json route on a cache hit either", async () => {
+    const build = vi.fn(buildAvatarSpec);
+    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build });
+    const first = await spyApp.request("/v1/avatar/alice.json");
+    const etag = first.headers.get("etag")!;
+    const second = await spyApp.request("/v1/avatar/alice.json", {
+      headers: { "if-none-match": etag },
+    });
+    expect(second.status).toBe(304);
+    expect(build).toHaveBeenCalledTimes(1);
   });
 });

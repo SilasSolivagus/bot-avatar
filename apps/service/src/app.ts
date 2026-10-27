@@ -11,6 +11,10 @@ export type Logger = (line: string) => void;
 export interface AppOptions {
   packs: readonly StylePack[];
   logger?: Logger;
+  /** Seam for tests: counts spec builds without changing what is served. */
+  build?: typeof buildAvatarSpec;
+  /** Seam for tests: counts renders without changing what is served. */
+  render?: typeof renderSvg;
 }
 
 const MAX_IDENTITY = 200;
@@ -61,7 +65,12 @@ function logRoute(pathname: string): string {
   return pathname.startsWith("/v1/avatar/") ? "/v1/avatar/*" : pathname;
 }
 
-export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
+export function createApp({
+  packs,
+  logger = () => {},
+  build = buildAvatarSpec,
+  render = renderSvg,
+}: AppOptions): Hono {
   const app = new Hono();
   // Hash once per pack, here: the hash is a pack-level constant and must never be computed
   // per request, or every cache hit would pay a full canonical serialisation.
@@ -149,10 +158,12 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       return c.body(null, 304, headers);
     }
 
-    const spec = buildAvatarSpec(pack, identity);
+    // Everything above this line is validation and a constant-time tag; nothing here may build
+    // the spec or render the svg until a 200 is certain, or a cache hit pays for both.
+    const spec = build(pack, identity);
 
     if (kind === "svg") {
-      return c.body(renderSvg(spec, { size, state }), 200, {
+      return c.body(render(spec, { size, state }), 200, {
         "Content-Type": "image/svg+xml; charset=utf-8",
         ...headers,
       });
