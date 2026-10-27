@@ -52,8 +52,15 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   const app = createApp({ packs, logger: (line) => console.log(line) });
-  serve({ fetch: app.fetch, port: args.port, hostname: args.host }, (info) => {
+  const server = serve({ fetch: app.fetch, port: args.port, hostname: args.host }, (info) => {
     // `info.port` is the bound port, not necessarily the requested one.
     console.log(`bot-avatar service on http://${args.host}:${info.port} (packs: ${[...ids].join(", ")})`);
+  });
+  // Without a listener Node prints the raw error (stack included) and the process dies
+  // with an opaque code. A failed start is one line that names the port, then exit 1.
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    const reason = error.code === "EADDRINUSE" ? "address already in use" : error.message;
+    console.error(`bot-avatar service could not start on ${args.host}:${args.port}: ${reason}`);
+    process.exitCode = 1;
   });
 }
