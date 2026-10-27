@@ -54,6 +54,7 @@ node apps/service/dist/cli.js --pack ./my-pack.ts                # add a local p
 | --- | --- |
 | `GET /v1/packs` | Known packs: id, name, version, familyCount |
 | `GET /v1/avatar/:identity.svg?pack=&size=&state=` | SVG, immutable-cacheable |
+| `GET /v1/avatar/:identity.png?pack=&size=&state=` | PNG rasterised from the same SVG, transparent background |
 | `GET /v1/avatar/:identity.json?pack=` | The `AvatarSpec` the SVG was built from |
 | `GET /health` | `{ ok: true, packs: n }` |
 
@@ -61,9 +62,10 @@ node apps/service/dist/cli.js --pack ./my-pack.ts                # add a local p
 Responses carry `ETag`, `X-Avatar-Pack` and `Cache-Control: public, max-age=31536000, immutable`.
 
 - `ETag` is an opaque content tag — a quoted 16-hex digest over the pack's content hash,
-  the identity hash, `size` and `state`. No pack id, version or identity text appears in
-  it, so editing a pack's data invalidates cached avatars even when its `version` field is
-  unchanged, and no header-breaking character can reach the wire.
+  the identity hash, `size`, `state` and the representation kind. No pack id, version or
+  identity text appears in it, so editing a pack's data invalidates cached avatars even
+  when its `version` field is unchanged, and no header-breaking character can reach the
+  wire. The kind marker means a PNG tag never validates an SVG entity, and vice versa.
 - `X-Avatar-Pack` carries the readable `id@version` for humans in devtools and logs. It
   never affects caching: the tag alone decides.
 - A request whose `If-None-Match` (a list, `*` or `W/`) matches that tag gets a bodyless

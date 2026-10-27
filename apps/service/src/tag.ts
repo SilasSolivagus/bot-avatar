@@ -2,21 +2,29 @@ import type { StylePack } from "@botavatar/engine";
 import { createHash } from "node:crypto";
 import { identityHash } from "./respond.js";
 
+export type TagKind = "svg" | "json" | "png";
+
 export interface TagInput {
   packHash: string;
   identity: string;
   size: number;
   state: string;
+  /**
+   * Which representation the tag belongs to. A PNG and an SVG of the same avatar
+   * share every other input, so without this marker one could validate the other.
+   * Defaults to `svg` so older callers keep an SVG-scoped tag.
+   */
+  kind?: TagKind;
 }
 
 /**
- * Opaque cache tag: a hash over hashes. The pack content hash, the identity hash
- * and the render options are the only inputs, so no pack or identity text can
- * appear in the result.
+ * Opaque cache tag: a hash over hashes. The pack content hash, the identity hash,
+ * the render options and the representation kind are the only inputs, so no pack
+ * or identity text can appear in the result.
  */
-export function avatarTag({ packHash, identity, size, state }: TagInput): string {
+export function avatarTag({ packHash, identity, size, state, kind = "svg" }: TagInput): string {
   const digest = createHash("sha256")
-    .update(`${packHash}|${identityHash(identity)}|${size}|${state}`, "utf8")
+    .update(`${packHash}|${identityHash(identity)}|${size}|${state}|${kind}`, "utf8")
     .digest("hex")
     .slice(0, 16);
   return `"${digest}"`;

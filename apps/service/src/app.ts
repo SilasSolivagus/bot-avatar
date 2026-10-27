@@ -3,6 +3,7 @@ import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
 import type { ValidatedPack } from "./packs.js";
 import { packContentHash } from "./pack-hash.js";
+import { renderPng } from "./png.js";
 import { CACHE_CONTROL, errorBody, identityHash } from "./respond.js";
 import { avatarTag, matchesIfNoneMatch, packHeader } from "./tag.js";
 
@@ -34,11 +35,19 @@ const JSON_TAG_STATE = "json";
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
 /** Splits `/v1/avatar/<identity>.<kind>` from the right, so identities may contain dots. */
-export function parseIdentity(pathname: string): { identity: string; kind: "svg" | "json" } | null {
+export function parseIdentity(
+  pathname: string,
+): { identity: string; kind: "svg" | "json" | "png" } | null {
   const prefix = "/v1/avatar/";
   if (!pathname.startsWith(prefix)) return null;
   const rest = pathname.slice(prefix.length);
-  const suffix = rest.endsWith(".svg") ? ".svg" : rest.endsWith(".json") ? ".json" : null;
+  const suffix = rest.endsWith(".svg")
+    ? ".svg"
+    : rest.endsWith(".json")
+      ? ".json"
+      : rest.endsWith(".png")
+        ? ".png"
+        : null;
   if (!suffix) return null;
   let decoded: string;
   try {
@@ -46,7 +55,7 @@ export function parseIdentity(pathname: string): { identity: string; kind: "svg"
   } catch {
     return null;
   }
-  return { identity: decoded, kind: suffix === ".svg" ? "svg" : "json" };
+  return { identity: decoded, kind: suffix.slice(1) as "svg" | "json" | "png" };
 }
 
 function readSize(raw: string | undefined): number | null {
@@ -145,11 +154,19 @@ export function createApp({
       return c.json(errorBody("bad_state", "state must be idle or working"), 400);
     }
 
-    // The tag is opaque: a hash over the pack hash, the identity hash and the options.
+    // The tag is opaque: a hash over the pack hash, the identity hash, the options
+    // and the representation kind. A PNG and an SVG of the same avatar never share
+    // a tag, so neither can validate the other.
     const tag =
-      kind === "svg"
-        ? avatarTag({ packHash, identity, size, state })
-        : avatarTag({ packHash, identity, size: JSON_TAG_SIZE, state: JSON_TAG_STATE });
+      kind === "json"
+        ? avatarTag({
+            packHash,
+            identity,
+            size: JSON_TAG_SIZE,
+            state: JSON_TAG_STATE,
+            kind: "json",
+          })
+        : avatarTag({ packHash, identity, size, state, kind });
     const headers = {
       ETag: tag,
       "X-Avatar-Pack": packHeader(pack),
@@ -163,6 +180,15 @@ export function createApp({
     // the spec or render the svg until a 200 is certain, or a cache hit pays for both.
     const spec = build(pack, identity);
 
+    if (kind === "png") {
+      // One rendering path, two encodings: the exact SVG string the `.svg` route
+      // would serve, rasterised once. No second spec and no second render call.
+      const svg = render(spec, { size, state });
+      return c.body(new Uint8Array(renderPng(svg, size)), 200, {
+        "Content-Type": "image/png",
+        ...headers,
+      });
+    }
     if (kind === "svg") {
       return c.body(render(spec, { size, state }), 200, {
         "Content-Type": "image/svg+xml; charset=utf-8",

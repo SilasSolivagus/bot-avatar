@@ -21,7 +21,8 @@ export const clay: StylePack = {
   motion: { durationMsByFamily: [1500, 1700], amplitude: 1 },
   assignment: "hash-only",
   surface: {
-    stops: [{ offset: 0, color: "#FFF3E0" }, { offset: 1, color: "#E8590C" }],
+    // No `stops`: a constant stop table would override the palette's light/dark and
+    // make every colour render the same orange. Highlight and shadow are palette-free.
     highlight: { cx: -16, cy: -14, r: 12, opacity: 0.45 },
     shadow: { dx: 0, dy: 3, blur: 5, color: "#000000" },
   },
