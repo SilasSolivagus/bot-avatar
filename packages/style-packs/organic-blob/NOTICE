@@ -1,0 +1,11 @@
+Bot Avatar
+Copyright 2026 the Bot Avatar authors
+
+This product includes software derived from Rakazo
+(https://github.com/elie222/rakazo), commit a0e5781, licensed under the
+Apache License, Version 2.0.
+
+The derived material is limited to numeric constants and geometry: ten
+organic outline point sets, eleven palette entries, the eye rectangle
+geometry, the working-animation durations per family, and the identity
+hash formula. No React, database, or runtime-state code was copied.

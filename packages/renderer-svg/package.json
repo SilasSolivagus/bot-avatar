@@ -2,8 +2,9 @@
   "name": "@botavatar/svg",
   "version": "0.0.0",
   "type": "module",
+  "license": "Apache-2.0",
   "sideEffects": false,
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "scripts": { "build": "tsup src/index.ts --format esm --dts --clean" }
 }
