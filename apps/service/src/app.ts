@@ -38,9 +38,30 @@ function readSize(raw: string | undefined): number | null {
   return Number.isInteger(value) && value >= MIN_SIZE && value <= MAX_SIZE ? value : null;
 }
 
+/**
+ * The path that is safe to log. An avatar path never contributes its identity: a parsed one
+ * becomes `<hash8>.<kind>`, and a malformed one under the avatar prefix stays opaque. Any
+ * other route is already public.
+ */
+function logRoute(pathname: string): string {
+  const parsed = parseIdentity(pathname);
+  if (parsed) return `/v1/avatar/<${identityHash(parsed.identity).slice(0, 8)}>.${parsed.kind}`;
+  return pathname.startsWith("/v1/avatar/") ? "/v1/avatar/*" : pathname;
+}
+
 export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
   const app = new Hono();
   const byId = new Map(packs.map((pack) => [pack.id, pack]));
+
+  // Registered before the routes so it wraps every response, including 404, 503 and 304.
+  // It only reads the response status; the body is left untouched.
+  app.use("*", async (c, next) => {
+    const started = performance.now();
+    await next();
+    const elapsed = Math.round(performance.now() - started);
+    const pathname = new URL(c.req.url).pathname;
+    logger(`${c.req.method} ${logRoute(pathname)} ${c.res.status} ${elapsed}ms`);
+  });
 
   app.get("/health", (c) => c.json({ ok: true, packs: byId.size }));
 
