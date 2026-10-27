@@ -206,7 +206,20 @@ const animated = renderSvg(spec, { size: 128, state: "working" }); // 带 CSS �
 
 - `identity` 做 URL 解码后长度限制 1–200 字符；空或超限返回 400。
 - 未知 pack 返回 400 并列出可用 id；未知路由 404。
-- 响应头：`Content-Type` 正确；`ETag` = `"<packId>@<packVersion>:<identity hash>"`；`Cache-Control: public, max-age=31536000, immutable`（因为输出只由 pack 版本与 identity 决定）。
+- 响应头：`Content-Type` 正确；`ETag` 是**不透明内容标签**——`"` + 16 位十六进制 + `"`，由「pack 内容哈希 + identity 哈希 + size + state」派生；`Cache-Control: public, max-age=31536000, immutable`。
+  - ETag 中不出现任何 pack 或 identity 的原文，因此换行、引号、逗号这些能破坏头部的字符不可能出现——这是结构性保证，不是转义。
+  - 缓存键必须含 size 与 state：同一身份的 64px 与 128px 是两份不同的字节。
+  - `X-Avatar-Pack: <packId>@<packVersion>` 供人排查，**不参与**缓存判断：能影响行为的字段不给人读，给人读的字段不影响行为。
+  - `If-None-Match` 命中时**不得**构建 spec、不得渲染 SVG，直接返回 304（缓存命中路径的成本应当只剩哈希）。
+  - `If-None-Match` 需接受逗号分隔的列表、`*` 通配符与 `W/` 弱标签，比较不透明值。
+
+### 10.1 pack 边界（结构性约束）
+
+服务内部只允许持有 `ValidatedPack`；`parsePack(unknown) → ValidatedPack | PackError` 是唯一入口，未解析的 pack 不得进入路由。
+
+- **入口解析**：`id`/`name`/`version` 为非空字符串；`id` 限安全字符集且不得含控制字符；`version` 限 semver。任一不满足即拒绝启动，错误须点名文件与字段。
+- **启动穷举**：对 pack 的每个 `family × palette 条目 × {idle, working}` 渲染一次（`organic-blob` 为 10 × 11 × 2 = 220 次），断言输出不含 `NaN`/`undefined`/`Infinity` 且结构完整。这一域是有限的，因此可以穷举；超过 1,000 次渲染的 pack 退化为抽样，且必须在日志里声明"已抽样"，不得静默。
+- **内容哈希**：`packContentHash` 用键排序的规范序列化计算，跨进程必须一致（要有测试）。它进入 ETag，因此改了包内容却忘记改版本号时缓存仍会失效——这条错误变得无法发生。
 - 不记录 identity 明文到日志（可能是用户邮箱），只记其哈希前缀。
 - 首版技术栈：Node 22 + Hono + `@hono/node-server`（与上游生态一致）；PNG 用 `sharp` 或 `resvg-js`，M2 再定。
 
@@ -233,9 +246,11 @@ URL 可复现：`/gallery?pack=organic-blob&ids=a,b,c&size=160`。技术栈：Vi
 - 无 `dependencies`；`peerDependencies` 为空。
 
 **服务**
-- 同一 URL 两次请求返回字节相同的 SVG，且 `ETag` 一致。
-- 1,000 并发请求下 p95 < 50ms（缓存命中路径）。
-- 未知 pack → 400；超长 identity → 400。
+- 同一 URL 两次请求返回字节相同的 SVG，且 `ETag` 一致；`ETag` 是 16 位十六进制的含引号不透明串，不含 pack 或 identity 原文。
+- `If-None-Match` 命中返回 304，且该路径**不构建 spec、不渲染**（以调用计数断言，不只看状态码）。
+- 缓存命中路径（304）在 100 并发下 p95 < 50ms。1,000 并发是部署级指标：本机共享压测机上的数字不作为判据，须在独立压测机复现后记录。
+- 未知 pack → 400；超长 identity（> 200 字符，按码点计）→ 400。
+- 坏 pack 必须在启动时退出：缺字段、类型错、名字含控制字符，三者都要点名文件并以非零码退出。
 
 **画廊**
 - 切换 pack 不刷新页面即生效。
