@@ -1,0 +1,21 @@
+{
+  "name": "bot-avatar",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.22.2" },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "build": "pnpm --filter @botavatar/engine build && pnpm --filter @botavatar/pack-organic-blob build && pnpm --filter @botavatar/svg build",
+    "parity": "vitest run --config vitest.parity.config.ts"
+  },
+  "devDependencies": {
+    "@botavatar/engine": "workspace:*",
+    "@botavatar/pack-organic-blob": "workspace:*",
+    "@botavatar/svg": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

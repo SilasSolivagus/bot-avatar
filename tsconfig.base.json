@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@botavatar/engine": ["packages/engine/src/index.ts"],
+      "@botavatar/pack-organic-blob": ["packages/style-packs/organic-blob/src/index.ts"],
+      "@botavatar/svg": ["packages/renderer-svg/src/index.ts"]
+    }
+  }
+}
