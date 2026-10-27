@@ -58,7 +58,19 @@ node apps/service/dist/cli.js --pack ./my-pack.ts                # add a local p
 | `GET /health` | `{ ok: true, packs: n }` |
 
 `identity` is URL-decoded and limited to 1–200 characters; `size` is 16–1024 (default 128); `state` is `idle` or `working`.
-Responses carry `ETag` and `Cache-Control: public, max-age=31536000, immutable`, and answer `304` to a matching `If-None-Match`.
+Responses carry `ETag`, `X-Avatar-Pack` and `Cache-Control: public, max-age=31536000, immutable`.
+
+- `ETag` is an opaque content tag — a quoted 16-hex digest over the pack's content hash,
+  the identity hash, `size` and `state`. No pack id, version or identity text appears in
+  it, so editing a pack's data invalidates cached avatars even when its `version` field is
+  unchanged, and no header-breaking character can reach the wire.
+- `X-Avatar-Pack` carries the readable `id@version` for humans in devtools and logs. It
+  never affects caching: the tag alone decides.
+- A request whose `If-None-Match` (a list, `*` or `W/`) matches that tag gets a bodyless
+  `304`, and a hit does no rendering: no spec is built, no SVG is produced. The hit path
+  is hashing only.
+
+The service still stores nothing: a `200` recomputes and re-renders from scratch.
 Logs never contain the identity, only a hash prefix.
 
 ## What you get back
