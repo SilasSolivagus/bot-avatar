@@ -42,6 +42,25 @@ const animated = renderSvg(spec, { size: 96, state: "working" });
 
 `renderSvg` returns a standalone `<svg>` string. No DOM, no globals, no framework — React, Vue, Astro and plain HTML all just insert the string.
 
+## HTTP service
+
+```bash
+pnpm build
+node apps/service/dist/cli.js --port 8787                      # built-in packs
+node apps/service/dist/cli.js --pack ./my-pack.ts                # add a local pack
+```
+
+| Route | Returns |
+| --- | --- |
+| `GET /v1/packs` | Known packs: id, name, version, familyCount |
+| `GET /v1/avatar/:identity.svg?pack=&size=&state=` | SVG, immutable-cacheable |
+| `GET /v1/avatar/:identity.json?pack=` | The `AvatarSpec` the SVG was built from |
+| `GET /health` | `{ ok: true, packs: n }` |
+
+`identity` is URL-decoded and limited to 1–200 characters; `size` is 16–1024 (default 128); `state` is `idle` or `working`.
+Responses carry `ETag` and `Cache-Control: public, max-age=31536000, immutable`, and answer `304` to a matching `If-None-Match`.
+Logs never contain the identity, only a hash prefix.
+
 ## What you get back
 
 `buildAvatarSpec(pack, identity)` returns an `AvatarSpec` — everything a renderer needs, and nothing tied to SVG:
@@ -159,10 +178,11 @@ const look = pickLeastUsed(looks, looksAlreadyUsed, random);
 
 ```bash
 pnpm install
-pnpm test        # builds, then runs 11 files / 57 tests
+pnpm test        # builds, then runs 15 files / 115 tests
 pnpm parity      # replays the frozen upstream snapshot (7 tests)
 pnpm typecheck
 pnpm build
+pnpm bench       # 4000 requests, concurrency 100; build first
 ```
 
 `pnpm test` runs `pnpm build` first: the cross-process test imports the built packages through their `dist` entries.
@@ -170,19 +190,23 @@ pnpm build
 `pnpm parity` is the one-time proof that this engine reproduces the renderings of the upstream project it was extracted from, at commit `a0e5781`. It is opt-in on purpose: the snapshot is frozen history, so a deliberate change to the geometry after M0 does not fail the normal suite. See `docs/parity-m0.md`.
 
 ```
+apps/service/                  HTTP service: routes, validation, caching, logging, CLI
+bench/                         benchmark script for the HTTP service
 packages/
   engine/                      hashing, family/look, colour, outline to path, spec
   style-packs/organic-blob/    ten bodies, eleven colours, eye geometry, durations
   renderer-svg/                spec to SVG string
 parity/                        recorder, frozen snapshot, parity-only test
-docs/                          spec, plan, parity evidence, preview
+docs/                          spec, plan, benchmark and parity evidence, preview
 ```
 
 ## Status
 
 **M0 — library.** Shipped: engine, the `organic-blob` pack, the SVG renderer, and the tests that pin them down.
 
-Not built yet, in order: an HTTP service (`/v1/avatar/:identity.svg` with ETag caching), a gallery for comparing packs, PNG rasterisation, a second pack, and a compatibility layer for legacy stored avatar values.
+**M1 — HTTP service.** Shipped: `apps/service`, a Hono app on Node 22 with `/v1/packs`, SVG and JSON avatar routes, `ETag`/`304` caching, redacted logging and a CLI (`--port`, `--host`, `--pack`). Every request recomputes the avatar; the measured p95 is 13.0 ms at concurrency 100, see [the benchmark](docs/m1-benchmark.md).
+
+Not built yet, in order: a gallery for comparing packs, PNG rasterisation, a second pack, and a compatibility layer for legacy stored avatar values.
 
 ## Licence
 

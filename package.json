@@ -11,6 +11,7 @@
     "test": "vitest run",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "build": "pnpm --filter @botavatar/engine build && pnpm --filter @botavatar/pack-organic-blob build && pnpm --filter @botavatar/svg build && pnpm --filter @botavatar/service build",
+    "bench": "node bench/service-bench.mjs",
     "parity": "vitest run --config vitest.parity.config.ts"
   },
   "devDependencies": {
