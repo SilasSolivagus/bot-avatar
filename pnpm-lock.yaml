@@ -22,13 +22,34 @@ importers:
         version: 22.20.5
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.32)(typescript@5.9.3)
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.32)(typescript@5.9.3)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
       vitest:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.20.5)
+
+  apps/service:
+    dependencies:
+      '@botavatar/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@botavatar/pack-organic-blob':
+        specifier: workspace:*
+        version: link:../../packages/style-packs/organic-blob
+      '@botavatar/svg':
+        specifier: workspace:*
+        version: link:../../packages/renderer-svg
+      '@hono/node-server':
+        specifier: ^1.13.7
+        version: 1.19.17(hono@4.13.14)
+      hono:
+        specifier: ^4.6.14
+        version: 4.13.14
+      jiti:
+        specifier: ^2.4.2
+        version: 2.7.0
 
   packages/engine: {}
 
@@ -332,6 +353,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@hono/node-server@1.19.17':
+    resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
+    engines: {node: '>=18.14.1'}
+    peerDependencies:
+      hono: ^4
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -619,6 +646,14 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  hono@4.13.14:
+    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
+    engines: {node: '>=16.9.0'}
+
+  jiti@2.7.0:
+    resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
+    hasBin: true
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -1021,6 +1056,10 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
+  '@hono/node-server@1.19.17(hono@4.13.14)':
+    dependencies:
+      hono: 4.13.14
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
@@ -1274,6 +1313,10 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
+  hono@4.13.14: {}
+
+  jiti@2.7.0: {}
+
   joycon@3.1.1: {}
 
   lilconfig@3.1.4: {}
@@ -1325,10 +1368,11 @@ snapshots:
       mlly: 1.8.2
       pathe: 2.0.3
 
-  postcss-load-config@6.0.1(postcss@8.5.32):
+  postcss-load-config@6.0.1(jiti@2.7.0)(postcss@8.5.32):
     dependencies:
       lilconfig: 3.1.4
     optionalDependencies:
+      jiti: 2.7.0
       postcss: 8.5.32
 
   postcss@8.5.32:
@@ -1420,7 +1464,7 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  tsup@8.5.1(postcss@8.5.32)(typescript@5.9.3):
+  tsup@8.5.1(jiti@2.7.0)(postcss@8.5.32)(typescript@5.9.3):
     dependencies:
       bundle-require: 5.1.0(esbuild@0.27.7)
       cac: 6.7.14
@@ -1431,7 +1475,7 @@ snapshots:
       fix-dts-default-cjs-exports: 1.0.1
       joycon: 3.1.1
       picocolors: 1.1.1
-      postcss-load-config: 6.0.1(postcss@8.5.32)
+      postcss-load-config: 6.0.1(jiti@2.7.0)(postcss@8.5.32)
       resolve-from: 5.0.0
       rollup: 4.65.1
       source-map: 0.7.6
