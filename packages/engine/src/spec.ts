@@ -1,3 +1,8 @@
+import { colorIndex } from "./color.js";
+import { avatarFamily, avatarLook } from "./family.js";
+import { outlinePath, phaseForSeed } from "./outline.js";
+import { avatarSeed } from "./seed.js";
+
 export interface PaletteColor {
   id: string;
   name: string;
@@ -70,4 +75,34 @@ export interface AvatarSpec {
   surface?: Surface;
   /** Viewport the path and eyes are drawn in. */
   viewBox: string;
+}
+
+/** Everything a renderer needs, derived from one identity and one pack. */
+export function buildAvatarSpec(pack: StylePack, identity: string): AvatarSpec {
+  const seed = avatarSeed(identity);
+  const family = avatarFamily(seed, pack.shapes);
+  const shape = pack.shapes[family]!;
+  const path = outlinePath(shape.outline, {
+    phase: phaseForSeed(seed),
+    smoothingPasses: shape.smoothingPasses,
+  });
+  const color = pack.palette[colorIndex(identity, pack.palette.length)]!;
+  const durationMs = pack.motion.durationMsByFamily[family] ?? pack.motion.durationMsByFamily[0]!;
+
+  return {
+    packId: pack.id,
+    packVersion: pack.version,
+    identity,
+    seed,
+    family,
+    look: avatarLook(family, pack.shapes),
+    color,
+    path,
+    eyes: pack.eyes.eyes,
+    eyeRotation: (seed % pack.eyes.rotation.modulo) - pack.eyes.rotation.spread,
+    durationMs,
+    motionAmplitude: pack.motion.amplitude,
+    surface: pack.surface,
+    viewBox: pack.viewBox,
+  };
 }
