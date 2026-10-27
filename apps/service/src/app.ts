@@ -1,11 +1,41 @@
 import type { StylePack } from "@botavatar/engine";
+import { buildAvatarSpec } from "@botavatar/engine";
+import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
+import { CACHE_CONTROL, errorBody, etagFor } from "./respond.js";
 
 export type Logger = (line: string) => void;
 
 export interface AppOptions {
   packs: readonly StylePack[];
   logger?: Logger;
+}
+
+const MAX_IDENTITY = 200;
+const DEFAULT_SIZE = 128;
+const MIN_SIZE = 16;
+const MAX_SIZE = 1024;
+
+/** Splits `/v1/avatar/<identity>.<kind>` from the right, so identities may contain dots. */
+export function parseIdentity(pathname: string): { identity: string; kind: "svg" | "json" } | null {
+  const prefix = "/v1/avatar/";
+  if (!pathname.startsWith(prefix)) return null;
+  const rest = pathname.slice(prefix.length);
+  const suffix = rest.endsWith(".svg") ? ".svg" : rest.endsWith(".json") ? ".json" : null;
+  if (!suffix) return null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rest.slice(0, -suffix.length));
+  } catch {
+    return null;
+  }
+  return { identity: decoded, kind: suffix === ".svg" ? "svg" : "json" };
+}
+
+function readSize(raw: string | undefined): number | null {
+  if (raw === undefined) return DEFAULT_SIZE;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= MIN_SIZE && value <= MAX_SIZE ? value : null;
 }
 
 export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
@@ -24,6 +54,46 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       })),
     }),
   );
+
+  app.get("/v1/avatar/*", (c) => {
+    const parsed = parseIdentity(new URL(c.req.url).pathname);
+    if (!parsed) return c.json(errorBody("not_found", "no such route"), 404);
+    const { identity, kind } = parsed;
+
+    if (identity.length < 1 || identity.length > MAX_IDENTITY) {
+      return c.json(errorBody("bad_identity", `identity must be 1-${MAX_IDENTITY} characters`), 400);
+    }
+
+    const url = new URL(c.req.url);
+    const packId = url.searchParams.get("pack") ?? packs[0]!.id;
+    const pack = byId.get(packId);
+    if (!pack) {
+      return c.json(
+        errorBody("unknown_pack", `unknown pack: ${packId}`, { packs: [...byId.keys()] }),
+        400,
+      );
+    }
+
+    const size = readSize(url.searchParams.get("size") ?? undefined);
+    if (size === null) {
+      return c.json(errorBody("bad_size", `size must be an integer ${MIN_SIZE}-${MAX_SIZE}`), 400);
+    }
+    const state = url.searchParams.get("state") ?? "idle";
+    if (state !== "idle" && state !== "working") {
+      return c.json(errorBody("bad_state", "state must be idle or working"), 400);
+    }
+
+    const spec = buildAvatarSpec(pack, identity);
+
+    if (kind === "svg") {
+      return c.body(renderSvg(spec, { size, state }), 200, {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        ETag: etagFor(pack, identity),
+        "Cache-Control": CACHE_CONTROL,
+      });
+    }
+    return c.json(spec, 200, { ETag: etagFor(pack, identity), "Cache-Control": CACHE_CONTROL });
+  });
 
   return app;
 }

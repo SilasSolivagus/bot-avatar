@@ -13,5 +13,6 @@ export function etagFor(pack: StylePack, identity: string): string {
 }
 
 export function errorBody(code: string, message: string, extra: Record<string, unknown> = {}) {
-  return { error: { code, message, ...extra } };
+  // Spread first: an `extra` field must never silently rewrite the code or the message.
+  return { error: { ...extra, code, message } };
 }
