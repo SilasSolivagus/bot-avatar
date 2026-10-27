@@ -20,9 +20,9 @@ describe("pickLeastUsed", () => {
     expect(pickLeastUsed([1, 2, 3], [], () => 0.99)).toBe(3);
   });
 
-  it("takes an avoided option only when everything is avoided", () => {
+  it("falls back to the least-used options when every option is avoided", () => {
     expect(pickLeastUsed([1, 2], [1, 1], () => 0, [2])).toBe(2);
-    expect(pickLeastUsed([1, 2], [1, 1], () => 0, [1, 2])).toBe(1);
+    expect(pickLeastUsed([1, 2], [1, 1], () => 0, [1, 2])).toBe(2);
   });
 
   it("never leaves the options", () => {

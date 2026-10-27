@@ -8,9 +8,6 @@ export type Random = () => number;
 /**
  * One of the options `used` relies on least, chosen at random among ties,
  * preferring anything missing from `avoid`.
- *
- * `avoid` narrows the least-used tier only. If the caller avoids every option
- * there is no tier to narrow, and the plain first-option fallback applies.
  */
 export function pickLeastUsed<T>(
   options: readonly T[],
@@ -22,11 +19,7 @@ export function pickLeastUsed<T>(
   const fewest = Math.min(...counts);
   const least = options.filter((_, index) => counts[index] === fewest);
   const preferred = least.filter((option) => !avoid.includes(option));
-  const candidates = options.every((option) => avoid.includes(option))
-    ? []
-    : preferred.length > 0
-      ? preferred
-      : least;
+  const candidates = preferred.length > 0 ? preferred : least;
   return candidates[Math.floor(random() * candidates.length)] ?? options[0]!;
 }
 
