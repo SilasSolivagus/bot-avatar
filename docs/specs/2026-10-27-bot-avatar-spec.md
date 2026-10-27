@@ -89,12 +89,19 @@ export interface StylePack {
   motion: {
     /** 每个家族的循环时长，与 shapes 等长 */
     durationMsByFamily: readonly number[];
+    /** 每个家族用哪套动作，与 shapes 等长；名字必须是 ClipName 之一 */
+    clipByFamily: readonly ClipName[];
     /** 引擎提供的标准编排；pack 只决定时长与幅度倍数 */
     amplitude: number;
   };
   /** 新身份分配策略：是否按"最少使用"挑家族与配色 */
   assignment: "least-used" | "hash-only";
 }
+
+/** 动作库：六个整体动作 + 两个只动眼睛的动作 */
+export type ClipName =
+  | "breathe" | "bob" | "sway" | "bounce" | "tilt" | "shake"
+  | "blink" | "look-round";
 
 export interface AvatarSpec {
   packId: string;
@@ -109,6 +116,8 @@ export interface AvatarSpec {
   eyes: EyeGeometry["eyes"];
   eyeRotation: number;
   durationMs: number;
+  /** 由 pack 的 clipByFamily[family] 决定 */
+  clip: ClipName;
   motionAmplitude: number;
 }
 ```
@@ -121,6 +130,17 @@ export function avatarFamily(seed: number, shapes: readonly ShapeFamily[]): numb
 export function avatarLook(family: number, shapes: readonly ShapeFamily[]): number;
 export function buildAvatarSpec(pack: StylePack, identity: string): AvatarSpec;
 export function pickLeastUsed<T>(options: readonly T[], used: readonly T[], random: () => number): T;
+
+/** 动作帧：五个通道始终齐全，渲染器不必判断 undefined */
+export interface ClipFrame {
+  translateY: number;
+  scale: number;
+  rotate: number;
+  eyeScaleY: number;
+  eyeOffsetX: number;
+}
+export function clipFrame(clip: ClipName, progress: number, amplitude: number): ClipFrame;
+export const CLIP_NAMES: readonly ClipName[];
 ```
 
 **渲染器契约**：
