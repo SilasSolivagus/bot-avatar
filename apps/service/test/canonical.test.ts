@@ -34,6 +34,12 @@ describe("canonicalJson", () => {
     expect(() => canonicalJson(sparse)).toThrow(CanonicalError);
   });
 
+  it("refuses array holes rather than emitting invalid JSON", () => {
+    const holes: number[] = [];
+    holes[1] = 2;
+    expect(() => canonicalJson(holes)).toThrow(CanonicalError);
+  });
+
   it("refuses symbols, bigints and negative infinity", () => {
     expect(() => canonicalJson({ a: Symbol("x") })).toThrow(CanonicalError);
     expect(() => canonicalJson({ a: 1n })).toThrow(CanonicalError);

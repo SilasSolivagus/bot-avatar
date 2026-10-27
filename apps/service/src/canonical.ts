@@ -26,7 +26,11 @@ function write(value: unknown, seen: Set<object>): string {
       seen.add(object);
       try {
         if (Array.isArray(value)) {
-          return `[${value.map((entry) => write(entry, seen)).join(",")}]`;
+          const entries: string[] = [];
+          for (let index = 0; index < value.length; index += 1) {
+            entries.push(write(value[index], seen));
+          }
+          return `[${entries.join(",")}]`;
         }
         const entries = Object.keys(object as Record<string, unknown>)
           .sort()
