@@ -73,7 +73,10 @@ describe("validatePack", () => {
     }
     expect(
       warnings.some(
-        (line) => line.includes("sampled") && line.includes("1000") && line.includes("/tmp/huge.ts"),
+        (line) =>
+          line.includes("sampled") &&
+          /conformance sampled \d+ renders/.test(line) &&
+          line.includes("/tmp/huge.ts"),
       ),
     ).toBe(true);
   });

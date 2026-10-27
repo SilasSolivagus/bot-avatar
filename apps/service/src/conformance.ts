@@ -51,6 +51,23 @@ function fragmentAt(svg: string, index: number, length: number): string {
   return svg.slice(Math.max(0, index - FRAGMENT_CONTEXT), index + length + FRAGMENT_CONTEXT);
 }
 
+/**
+ * Samples at most `cap` combinations with an even stride across the whole list instead of a
+ * front slice, which would leave a large pack's tail unchecked. The final combination is
+ * always included: when the stride is wider than the palette, an even stride can land
+ * between the last family's combinations and never render that family at all.
+ */
+function sampleEvenly<T>(combos: readonly T[], cap: number): T[] {
+  const stride = Math.ceil(combos.length / cap);
+  const selected = combos.filter((_, index) => index % stride === 0);
+  const lastIndex = combos.length - 1;
+  if (selected.length > 0 && lastIndex % stride !== 0) {
+    if (selected.length < cap) selected.push(combos[lastIndex]!);
+    else selected[selected.length - 1] = combos[lastIndex]!;
+  }
+  return selected;
+}
+
 /** Throws unless `svg` is a well-formed document with no leaked non-values. */
 function assertUsableSvg(svg: string, where: string): void {
   if (!svg.startsWith("<svg") || !svg.endsWith("</svg>")) {
@@ -87,7 +104,9 @@ export function assertPackRenders(
     for (let color = 0; color < pack.palette.length; color++) combos.push({ family, color });
   }
   const sampled = combos.length * STATES.length > MAX_RENDERS;
-  const selected = sampled ? combos.slice(0, Math.floor(MAX_RENDERS / STATES.length)) : combos;
+  const selected = sampled
+    ? sampleEvenly(combos, Math.floor(MAX_RENDERS / STATES.length))
+    : combos;
   const rendered = selected.length * STATES.length;
 
   for (const { family, color } of selected) {

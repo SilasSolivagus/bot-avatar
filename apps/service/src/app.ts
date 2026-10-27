@@ -2,7 +2,9 @@ import type { StylePack } from "@botavatar/engine";
 import { buildAvatarSpec } from "@botavatar/engine";
 import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
-import { CACHE_CONTROL, errorBody, etagFor, identityHash } from "./respond.js";
+import { packContentHash } from "./pack-hash.js";
+import { CACHE_CONTROL, errorBody, identityHash } from "./respond.js";
+import { avatarTag, matchesIfNoneMatch, packHeader } from "./tag.js";
 
 export type Logger = (line: string) => void;
 
@@ -15,6 +17,14 @@ const MAX_IDENTITY = 200;
 const DEFAULT_SIZE = 128;
 const MIN_SIZE = 16;
 const MAX_SIZE = 1024;
+/**
+ * The JSON body is the spec the SVG is built from, so it depends on the pack and the identity
+ * only. Its tag hashes fixed sentinels instead of the render options, for two reasons: `size`
+ * and `state` do not change the JSON bytes, and a distinct tag per representation keeps a
+ * client from reusing an SVG validator on the JSON route (and vice versa).
+ */
+const JSON_TAG_SIZE = 0;
+const JSON_TAG_STATE = "json";
 /** The API contract is UTF-8 JSON; Hono's `c.json` only says `application/json`. */
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
@@ -41,20 +51,6 @@ function readSize(raw: string | undefined): number | null {
 }
 
 /**
- * True when `If-None-Match` selects the current representation. The header is a comma-separated
- * list of opaque tags; `*` selects any representation and a `W/` prefix means weak comparison,
- * which still matches on the opaque tag value (RFC 9110 §13.1.2).
- */
-function matchesIfNoneMatch(header: string | undefined, tag: string): boolean {
-  if (!header) return false;
-  return header.split(",").some((part) => {
-    const candidate = part.trim();
-    if (candidate === "*") return true;
-    return (candidate.startsWith("W/") ? candidate.slice(2) : candidate) === tag;
-  });
-}
-
-/**
  * The path that is safe to log. An avatar path never contributes its identity: a parsed one
  * becomes `<hash8>.<kind>`, and a malformed one under the avatar prefix stays opaque. Any
  * other route is already public.
@@ -67,7 +63,11 @@ function logRoute(pathname: string): string {
 
 export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
   const app = new Hono();
-  const byId = new Map(packs.map((pack) => [pack.id, pack]));
+  // Hash once per pack, here: the hash is a pack-level constant and must never be computed
+  // per request, or every cache hit would pay a full canonical serialisation.
+  const byId = new Map(
+    packs.map((pack) => [pack.id, { pack, hash: packContentHash(pack) }] as const),
+  );
 
   // Registered before the routes so it wraps every response, including 404, 503 and 304.
   // It only reads the response status; the body is left untouched.
@@ -117,13 +117,14 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
 
     const url = new URL(c.req.url);
     const packId = url.searchParams.get("pack") ?? packs[0]!.id;
-    const pack = byId.get(packId);
-    if (!pack) {
+    const entry = byId.get(packId);
+    if (!entry) {
       return c.json(
         errorBody("unknown_pack", `unknown pack: ${packId}`, { packs: [...byId.keys()] }),
         400,
       );
     }
+    const { pack, hash: packHash } = entry;
 
     const size = readSize(url.searchParams.get("size") ?? undefined);
     if (size === null) {
@@ -134,13 +135,18 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
       return c.json(errorBody("bad_state", "state must be idle or working"), 400);
     }
 
-    // The SVG varies with size and state, so its tag carries them; the JSON does not, so it does not.
+    // The tag is opaque: a hash over the pack hash, the identity hash and the options.
     const tag =
       kind === "svg"
-        ? `"${pack.id}@${pack.version}:${identityHash(identity)}:${size}:${state}"`
-        : etagFor(pack, identity);
+        ? avatarTag({ packHash, identity, size, state })
+        : avatarTag({ packHash, identity, size: JSON_TAG_SIZE, state: JSON_TAG_STATE });
+    const headers = {
+      ETag: tag,
+      "X-Avatar-Pack": packHeader(pack),
+      "Cache-Control": CACHE_CONTROL,
+    };
     if (matchesIfNoneMatch(c.req.header("if-none-match"), tag)) {
-      return c.body(null, 304, { ETag: tag, "Cache-Control": CACHE_CONTROL });
+      return c.body(null, 304, headers);
     }
 
     const spec = buildAvatarSpec(pack, identity);
@@ -148,11 +154,10 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
     if (kind === "svg") {
       return c.body(renderSvg(spec, { size, state }), 200, {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        ETag: tag,
-        "Cache-Control": CACHE_CONTROL,
+        ...headers,
       });
     }
-    return c.json(spec, 200, { ETag: tag, "Cache-Control": CACHE_CONTROL });
+    return c.json(spec, 200, headers);
   });
 
   app.notFound((c) => c.json(errorBody("not_found", "no such route"), 404));

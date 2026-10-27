@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { createApp, parseIdentity } from "../src/app.js";
+import { packContentHash } from "../src/pack-hash.js";
+
+// Count calls without changing the hash: the real implementation still runs.
+vi.mock("../src/pack-hash.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/pack-hash.js")>();
+  return { ...actual, packContentHash: vi.fn(actual.packContentHash) };
+});
 
 const app = createApp({ packs: [organicBlob], logger: () => {} });
 
@@ -128,9 +135,19 @@ describe("conditional requests", () => {
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
-  it("quotes the etag and names the pack and the identity hash", async () => {
+  it("carries an opaque quoted 16-hex tag with no pack or identity text", async () => {
     const res = await app.request("/v1/avatar/alice.svg");
-    expect(res.headers.get("etag")).toMatch(/^"organic-blob@1\.0\.0:[0-9a-f]{16}:128:idle"$/);
+    const etag = res.headers.get("etag")!;
+    expect(etag).toMatch(/^"[0-9a-f]{16}"$/);
+    expect(etag).not.toContain("organic-blob");
+    expect(etag).not.toContain("alice");
+  });
+
+  it("carries the readable pack name in X-Avatar-Pack on both representations", async () => {
+    const svg = await app.request("/v1/avatar/alice.svg");
+    const json = await app.request("/v1/avatar/alice.json");
+    expect(svg.headers.get("x-avatar-pack")).toBe("organic-blob@1.0.0");
+    expect(json.headers.get("x-avatar-pack")).toBe("organic-blob@1.0.0");
   });
 
   it("answers 304 with no body when the etag matches", async () => {
@@ -141,6 +158,7 @@ describe("conditional requests", () => {
     expect(await second.text()).toBe("");
     expect(second.headers.get("etag")).toBe(etag);
     expect(second.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(second.headers.get("x-avatar-pack")).toBe("organic-blob@1.0.0");
     expect(second.headers.get("content-type")).toBeNull();
   });
 
@@ -179,7 +197,7 @@ describe("conditional requests", () => {
 
   it("answers 200 when the etag differs", async () => {
     const res = await app.request("/v1/avatar/alice.svg", {
-      headers: { "if-none-match": '"organic-blob@0.0.0:0000000000000000"' },
+      headers: { "if-none-match": '"0000000000000000"' },
     });
     expect(res.status).toBe(200);
   });
@@ -190,12 +208,34 @@ describe("conditional requests", () => {
     expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
   });
 
+  it("gives different packs different etags", async () => {
+    const twin = { ...structuredClone(organicBlob), id: "organic-twin" };
+    const twoPacks = createApp({ packs: [organicBlob, twin], logger: () => {} });
+    const a = await twoPacks.request("/v1/avatar/alice.svg?pack=organic-blob");
+    const b = await twoPacks.request("/v1/avatar/alice.svg?pack=organic-twin");
+    expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
+    expect(b.headers.get("x-avatar-pack")).toBe("organic-twin@1.0.0");
+  });
+
   it("gives different sizes and states different svg etags", async () => {
     const base = await app.request("/v1/avatar/alice.svg");
     const small = await app.request("/v1/avatar/alice.svg?size=64");
     const working = await app.request("/v1/avatar/alice.svg?state=working");
     expect(small.headers.get("etag")).not.toBe(base.headers.get("etag"));
     expect(working.headers.get("etag")).not.toBe(base.headers.get("etag"));
+  });
+
+  it("hashes each pack once when the app is built, never per request", async () => {
+    const twin = { ...structuredClone(organicBlob), id: "organic-twin" };
+    vi.mocked(packContentHash).mockClear();
+    const twoPacks = createApp({ packs: [organicBlob, twin], logger: () => {} });
+    expect(packContentHash).toHaveBeenCalledTimes(2);
+
+    for (const pack of ["organic-blob", "organic-twin"]) {
+      const res = await twoPacks.request(`/v1/avatar/alice.svg?pack=${pack}`);
+      expect(res.status, pack).toBe(200);
+    }
+    expect(packContentHash).toHaveBeenCalledTimes(2);
   });
 
   it("does not answer 304 for a json request when the svg etag matches", async () => {
@@ -222,7 +262,7 @@ describe("GET /v1/avatar/:identity.json", () => {
     const first = await app.request("/v1/avatar/alice.json");
     const second = await app.request("/v1/avatar/alice.json");
     expect(second.headers.get("etag")).toBe(first.headers.get("etag"));
-    expect(first.headers.get("etag")).toMatch(/^"organic-blob@1\.0\.0:[0-9a-f]{16}"$/);
+    expect(first.headers.get("etag")).toMatch(/^"[0-9a-f]{16}"$/);
   });
 
   it("ignores size and state in the json etag", async () => {

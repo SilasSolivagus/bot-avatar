@@ -40,4 +40,42 @@ describe("assertPackRenders", () => {
     expect(result.sampled).toBe(true);
     expect(result.rendered).toBeLessThanOrEqual(1000);
   });
+
+  it("samples across the whole domain, so a broken last family is still caught", () => {
+    const broken = {
+      ...structuredClone(organicBlob),
+      palette: Array.from(
+        { length: 60 },
+        (_, index) => organicBlob.palette[index % organicBlob.palette.length]!,
+      ),
+    };
+    const lastFamily = broken.shapes.length - 1;
+    (broken.shapes[lastFamily] as { outline: unknown }).outline = [
+      [Number.NaN, 0],
+      [0, 0],
+      [0, 10],
+    ];
+    expect(() => assertPackRenders(broken, "last-family")).toThrow(PackError);
+    expect(() => assertPackRenders(broken, "last-family")).toThrow(new RegExp(`family ${lastFamily}`));
+  });
+
+  it("reaches the last family even when the stride is wider than the palette", () => {
+    const crowded = {
+      ...structuredClone(organicBlob),
+      shapes: Array.from(
+        { length: 600 },
+        (_, index) => structuredClone(organicBlob.shapes[index % organicBlob.shapes.length]!),
+      ),
+      palette: organicBlob.palette.slice(0, 5),
+    };
+    const lastFamily = crowded.shapes.length - 1;
+    (crowded.shapes[lastFamily] as { outline: unknown }).outline = [
+      [Number.NaN, 0],
+      [0, 0],
+      [0, 10],
+    ];
+    expect(() => assertPackRenders(crowded, "wide-stride")).toThrow(
+      new RegExp(`family ${lastFamily}`),
+    );
+  });
 });
