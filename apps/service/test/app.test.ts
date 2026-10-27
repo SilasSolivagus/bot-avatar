@@ -13,6 +13,22 @@ describe("health", () => {
   });
 });
 
+describe("json content type", () => {
+  it("declares utf-8 explicitly on every json response", async () => {
+    const paths = ["/health", "/v1/packs", "/v1/avatar/alice.json", "/nope", "/v1/avatar/nope"];
+    for (const path of paths) {
+      const res = await app.request(path);
+      expect(res.headers.get("content-type"), path).toBe("application/json; charset=utf-8");
+    }
+    const unknownPack = await app.request("/v1/avatar/alice.svg?pack=nope");
+    expect(unknownPack.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    const empty = createApp({ packs: [] });
+    expect((await empty.request("/v1/avatar/alice.svg")).headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
+  });
+});
+
 describe("GET /v1/packs", () => {
   it("lists id, name, version and family count", async () => {
     const res = await app.request("/v1/packs");
@@ -67,6 +83,18 @@ describe("GET /v1/avatar/:identity.svg", () => {
   it("rejects an identity over 200 characters", async () => {
     const res = await app.request(`/v1/avatar/${"a".repeat(201)}.svg`);
     expect(res.status).toBe(400);
+  });
+
+  it("counts an emoji as one character, not two UTF-16 code units", async () => {
+    expect((await app.request(`/v1/avatar/${"😀".repeat(100)}.svg`)).status).toBe(200);
+    // 101 emoji are 202 UTF-16 code units but only 101 characters; the 200-character
+    // limit is measured in code points, so this must fit.
+    expect((await app.request(`/v1/avatar/${"😀".repeat(101)}.svg`)).status).toBe(200);
+  });
+
+  it("accepts exactly 200 emoji and rejects 201", async () => {
+    expect((await app.request(`/v1/avatar/${"😀".repeat(200)}.svg`)).status).toBe(200);
+    expect((await app.request(`/v1/avatar/${"😀".repeat(201)}.svg`)).status).toBe(400);
   });
 
   it("rejects a size outside 16..1024 and a bad state", async () => {

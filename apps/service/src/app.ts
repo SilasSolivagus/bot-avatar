@@ -15,6 +15,8 @@ const MAX_IDENTITY = 200;
 const DEFAULT_SIZE = 128;
 const MIN_SIZE = 16;
 const MAX_SIZE = 1024;
+/** The API contract is UTF-8 JSON; Hono's `c.json` only says `application/json`. */
+const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
 /** Splits `/v1/avatar/<identity>.<kind>` from the right, so identities may contain dots. */
 export function parseIdentity(pathname: string): { identity: string; kind: "svg" | "json" } | null {
@@ -77,6 +79,15 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
     logger(`${c.req.method} ${logRoute(pathname)} ${c.res.status} ${elapsed}ms`);
   });
 
+  // JSON is always UTF-8; make it explicit instead of relying on Hono's bare `application/json`.
+  // The 304 path sets no content type at all, so it is left alone.
+  app.use("*", async (c, next) => {
+    await next();
+    if (c.res.headers.get("content-type")?.startsWith("application/json")) {
+      c.res.headers.set("content-type", JSON_CONTENT_TYPE);
+    }
+  });
+
   app.get("/health", (c) => c.json({ ok: true, packs: byId.size }));
 
   app.get("/v1/packs", (c) =>
@@ -95,7 +106,8 @@ export function createApp({ packs, logger = () => {} }: AppOptions): Hono {
     if (!parsed) return c.json(errorBody("not_found", "no such route"), 404);
     const { identity, kind } = parsed;
 
-    if (identity.length < 1 || identity.length > MAX_IDENTITY) {
+    const length = [...identity].length;
+    if (length < 1 || length > MAX_IDENTITY) {
       return c.json(errorBody("bad_identity", `identity must be 1-${MAX_IDENTITY} characters`), 400);
     }
 
