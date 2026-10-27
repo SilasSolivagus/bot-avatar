@@ -16,12 +16,37 @@ describe("lookCounts and balance", () => {
     expect(result.ok).toBe(true);
     expect(result.max).toBeLessThanOrEqual(result.allowed);
     expect(result.missing).toEqual([]);
+    expect(result.reserved).toBe(0);
   });
 
   it("rejects an unbalanced set", () => {
     // One identity repeated: a single look, so most assignable looks are missing.
     const specs = specsOf(Array.from({ length: 12 }, () => "alice"));
     expect(balance(specs, looks).ok).toBe(false);
+  });
+
+  it("counts a reserved identity without counting it in the assignable balance", () => {
+    const specs = specsOf([...wallIdentities(organicBlob, looks.length), "dave"]);
+    expect(specs.at(-1)?.look).toBe(6);
+    expect(balance(specs, looks)).toMatchObject({
+      ok: true,
+      max: 1,
+      allowed: 1,
+      missing: [],
+      reserved: 1,
+    });
+  });
+
+  it("stays balanced when several identities wear the reserved look", () => {
+    const specs = specsOf([...wallIdentities(organicBlob, looks.length), "dave", "oscar", "tom"]);
+    expect(specs.filter((spec) => spec.look === 6)).toHaveLength(3);
+    expect(balance(specs, looks)).toMatchObject({
+      ok: true,
+      max: 1,
+      allowed: 1,
+      missing: [],
+      reserved: 3,
+    });
   });
 });
 

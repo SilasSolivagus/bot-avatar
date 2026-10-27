@@ -6,7 +6,13 @@ import { PackPicker } from "./components/PackPicker.js";
 import { Wall } from "./components/Wall.js";
 import { wallIdentities } from "./metrics.js";
 import { galleryPacks } from "./packs.js";
-import { formatWallState, MAX_IDS, parseWallState, type WallState } from "./state.js";
+import {
+  addWallIdentity,
+  formatWallState,
+  MAX_IDS,
+  parseWallState,
+  type WallState,
+} from "./state.js";
 
 /** The wall is a 40-identity comparison; the default ids come from the pack, balanced. */
 const WALL_COUNT = 40;
@@ -43,6 +49,7 @@ function urlFor(state: WallState, service: string): string {
 export function App() {
   const [view, setView] = useState<View>(() => readView(window.location.search));
   const [selected, setSelected] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const { state, packIndex, service } = view;
   const entry = PACKS[packIndex]!;
   const pack = entry.pack;
@@ -52,6 +59,7 @@ export function App() {
     const sync = () => {
       setView(readView(window.location.search));
       setSelected(null);
+      setNotice(null);
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
@@ -73,13 +81,20 @@ export function App() {
       size: state.size,
     });
     setSelected(null);
+    setNotice(null);
   };
 
   const addIdentity = (identity: string) => {
-    if (!state.ids.includes(identity)) {
-      update({ ...state, ids: [...state.ids, identity].slice(0, MAX_IDS) });
+    const next = addWallIdentity(state.ids, identity);
+    if (next.outcome === "full") {
+      // At the cap the wall and the URL stay as they are, so selecting the
+      // rejected identity would point the detail card at something not on the wall.
+      setNotice(`wall is full (${MAX_IDS})`);
+      return;
     }
+    if (next.outcome === "added") update({ ...state, ids: next.ids });
     setSelected(identity);
+    setNotice(null);
   };
 
   const detailSize = Math.min(320, Math.max(200, Math.round(state.size * 1.5)));
@@ -91,12 +106,12 @@ export function App() {
         <div className="brand">
           <h1>Bot Avatar Gallery</h1>
           <p className="muted">
-            {entry.label} · {state.ids.length} of {MAX_IDS} identities · {looks.length} looks ·{" "}
-            {state.size}px
+            {entry.label} · {state.ids.length} of {MAX_IDS} identities · {looks.length} assignable
+            looks · {state.size}px
           </p>
         </div>
         <PackPicker packs={PACKS} value={state.pack} onChange={changePack} />
-        <IdentityInput pack={pack} onAdd={addIdentity} />
+        <IdentityInput pack={pack} onAdd={addIdentity} notice={notice} />
       </header>
 
       <div className="layout">

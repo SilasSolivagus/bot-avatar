@@ -19,9 +19,11 @@ function familyForLook(pack: StylePack, look: number): number | null {
 export interface IdentityInputProps {
   pack: StylePack;
   onAdd: (identity: string) => void;
+  /** A short inline message from the parent, for example when the wall is full. */
+  notice?: string | null;
 }
 
-export function IdentityInput({ pack, onAdd }: IdentityInputProps) {
+export function IdentityInput({ pack, onAdd, notice }: IdentityInputProps) {
   const [value, setValue] = useState("");
   const samples = useMemo(
     () =>
@@ -61,6 +63,11 @@ export function IdentityInput({ pack, onAdd }: IdentityInputProps) {
           Add
         </button>
       </form>
+      {notice !== null && notice !== undefined && (
+        <p className="identity-notice" role="status">
+          {notice}
+        </p>
+      )}
       <div className="samples" role="group" aria-label="Sample identities">
         <span className="field-label">Samples</span>
         <div className="samples-row">

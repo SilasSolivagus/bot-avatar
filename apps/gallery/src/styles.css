@@ -118,6 +118,13 @@ textarea:focus-visible {
   min-width: 240px;
 }
 
+.identity-notice {
+  margin: 0;
+  align-self: center;
+  color: var(--bad-text);
+  font-size: 12px;
+}
+
 .samples {
   display: flex;
   flex-direction: column;

@@ -22,13 +22,13 @@ service-shaped action is the PNG link, and the gallery never rasterises it local
 
 | Region | What it is for | URL parameters it reads or writes |
 | --- | --- | --- |
-| **Pack switcher** | A `<select>` over the built-in pack plus every module under `src/packs/`. Changing it re-renders the wall without a page reload and resets `ids` to that pack's balanced wall. | writes `pack` |
-| **Identity input** | A text field (Enter or **Add**) and five sample buttons. Samples come from `avatarSampleIdentity` for the first five assignable looks. A new identity is appended to the wall and selected in the detail card. | writes `ids` |
-| **Comparison wall** | The identities in `ids` (40 by default, at most 60), each captioned `#family · look #look · colour`, plus a balance banner. Clicking a cell selects it. The strip below the wall renders one identity per assignable look and reports its distinctness. | reads `ids`, `size` |
+| **Pack switcher** | A `<select>` over the built-in pack plus every module under `src/packs/`. Changing it re-renders the wall without a page reload and resets the wall to that pack's balanced set. | writes `pack` |
+| **Identity input** | A text field (Enter or **Add**) and five sample buttons. Samples come from `avatarSampleIdentity` for the first five assignable looks. A new identity is appended to the wall and selected in the detail card; at 60 identities the wall is unchanged and the input says so. | writes `id` |
+| **Comparison wall** | The identities in `id` (40 by default, at most 60), each captioned `#family · look #look · colour`, plus a balance banner. Clicking a cell selects it. The strip below the wall renders one identity per assignable look and reports its distinctness. | reads `id`, `size` |
 | **Detail card** | The selected avatar at detail size, its `AvatarSpec` as JSON, **Copy SVG**, **Download SVG**, **Download PNG** and an `idle` / `working` toggle. The PNG link is enabled only when an `http(s)` service base is configured. | reads `size`, `service` |
 
-`ids` is not just a filter: the banner and the strip measure the identities in the URL. The default
-40-identity wall is balanced by construction (`wallIdentities`), but a hand-written `?ids=` list can
+The identities are not just a filter: the banner and the strip measure what is in the URL. The default
+40-identity wall is balanced by construction (`wallIdentities`), but a hand-written `?id=` list can
 be unbalanced, and then the banner says so instead of hiding it.
 
 ### URL state
@@ -39,12 +39,14 @@ through `history.replaceState`, and `popstate` re-reads the URL.
 | Parameter | Form | Meaning |
 | --- | --- | --- |
 | `pack` | pack id | The style pack. Missing or unknown falls back to the first known pack (`organic-blob`). |
-| `ids` | comma-separated identities | Trimmed, de-duplicated, empty entries dropped, capped at 60. Missing or empty means the pack's balanced wall of 40. |
+| `id` | one identity per parameter, repeated | Read verbatim: no trimming, so a comma or edge whitespace belongs to the identity. De-duplicated after decoding and capped at 60. Missing means the pack's balanced wall of 40. |
+| `ids` | comma-separated identities (legacy) | Still accepted when no `id` is present, so old links keep working. Trimmed, de-duplicated, empty entries dropped, capped at 60. |
 | `size` | integer | Cell size, 48–512, default 160. An invalid value falls back to 160 instead of producing `NaN`. The strip clamps its own cells to 64–128. |
 | `service` | `http(s)` base | Optional service base for the **Download PNG** link, for example `http://127.0.0.1:8787`. It is kept outside `WallState` so it survives pack and identity changes. |
 
-Example: `/?pack=organic-blob&ids=alice,bob&size=160`. `formatWallState` uses `encodeURIComponent`,
-so a space round-trips as `%20` rather than `+`.
+Example: `/?pack=organic-blob&id=alice&id=bob&size=160`. Each identity is its own `id=` parameter,
+so `id=a%2Cb` is the single identity `a,b` rather than two cells. `formatWallState` uses
+`encodeURIComponent`, so a space round-trips as `%20` rather than `+`.
 
 ## A criterion that could not pass, and what replaced it
 
@@ -55,7 +57,7 @@ strategy. The shipped pack cannot satisfy that, and the impossibility is arithme
 The pack has ten bodies but **eight assignable looks**: families 0–5, 7 and 9 are assignable; family 6
 is reserved (`HEART_FAMILY`); family 8 declares `look: 2` and therefore shares look 2 with family 2.
 `avatarAssignableLooks` returned `[0, 1, 2, 3, 4, 5, 7, 9]` when measured today, and the gallery
-header shows `8 looks`.
+header shows `8 assignable looks`.
 
 By pigeonhole, any set of `N` identities contains at most 8 distinct looks, so at least `N − 8` of
 them repeat a look and the duplicate rate `(N − distinct) / N` is at least `(N − 8) / N`. For the
@@ -66,8 +68,9 @@ correct floor. The plan document is historical and is left alone.)
 
 Two reachable criteria replaced it. Both are what the wall and the strip actually measure:
 
-1. **Balance.** Every assignable look appears at least once, and no look is worn more than
-   `ceil(N / looks)` times. For 40 identities and 8 looks that allows at most 5 per look. This is what
+1. **Balance.** Every assignable look appears at least once, and no assignable look is worn more than
+   `ceil(N / looks)` times, where `N` counts only identities whose look is in the assignment pool. For
+   40 identities and 8 looks that allows at most 5 per look. This is what
    “least-used assignment” really promises, and it is checkable for any `N`.
 2. **Distinctness.** A strip of exactly one identity per look — 8 identities for this pack — must show
    8 distinct looks: a duplicate rate of 0. This is the human question “do these read as different
@@ -81,9 +84,16 @@ Measured on the default wall and strip today:
 | Strip distinctness | one identity per assignable look | `8 / 8` distinct, `0%` repeat |
 
 The gallery dev server (on port 5199 for this check) rendered those same numbers as
-“Balanced · max 5 vs allowed 5 · 40 identities across 8 looks” and
+“Balanced · max 5 vs allowed 5 · 40 identities across 8 assignable looks” and
 “8 / 8 distinct looks · 0% repeat”. One wall cell carries the caption `#8 · look #2`: family 8 is a
 body that can wear look 2, which is why the look count stays 8 while ten families exist.
+
+A pasted identity whose hash lands on family 6 wears the reserved heart look, which is not one of the
+8 assignable looks. That identity is still legitimate, so the balance rule counts it in a separate
+`reserved` figure rather than against `max` / `allowed` / `missing`; the banner adds a visible note
+that the reserved look is present and outside the assignment pool. The header and the banner say
+“assignable looks” for the 8, so a wall displaying 9 distinct looks (8 assignable plus the heart) is
+not a contradiction.
 
 ## PNG identity
 
@@ -213,9 +223,9 @@ Run on 2026-10-27 while writing this file:
 
 ```text
 pnpm typecheck                          pass
-pnpm test                               24 files / 236 tests passed
+pnpm test                               24 files / 253 tests passed
 pnpm build                              pass
-pnpm --filter @botavatar/gallery build  pass (163.70 kB JS / 53.68 kB gzip, 5.31 kB CSS / 1.65 kB gzip)
+pnpm --filter @botavatar/gallery build  pass (164.49 kB JS / 53.93 kB gzip, 5.39 kB CSS / 1.68 kB gzip)
 ```
 
 `pnpm test` runs `pnpm build` first, so the cross-process and CLI tests exercise the built packages.

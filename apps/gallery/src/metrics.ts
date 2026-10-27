@@ -12,16 +12,29 @@ export function lookCounts(specs: readonly AvatarSpec[]): ReadonlyMap<number, nu
  * Whether a wall spreads its specs as evenly as the pack allows. `assignableLooks`
  * is the pack's list of looks, not the wall's: `missing` is measured against what
  * the pack can produce, so a wall that skips a look cannot look balanced.
+ *
+ * A spec whose look is not in `assignableLooks` wears a reserved look (a pasted
+ * identity whose hash landed there). It is outside the assignment pool, so it is
+ * counted in `reserved` and left out of `max`, `allowed` and `missing`: containing
+ * a legitimate reserved identity must not make the assignable wall look unbalanced.
  */
 export function balance(
   specs: readonly AvatarSpec[],
   assignableLooks: readonly number[],
-): { ok: boolean; max: number; allowed: number; missing: number[] } {
-  const counts = lookCounts(specs);
-  const allowed = Math.ceil(specs.length / Math.max(1, assignableLooks.length));
+): { ok: boolean; max: number; allowed: number; missing: number[]; reserved: number } {
+  const assignable = new Set(assignableLooks);
+  const assigned = specs.filter((spec) => assignable.has(spec.look));
+  const counts = lookCounts(assigned);
+  const allowed = Math.ceil(assigned.length / Math.max(1, assignableLooks.length));
   const max = Math.max(0, ...counts.values());
   const missing = assignableLooks.filter((look) => !counts.has(look));
-  return { ok: max <= allowed && missing.length === 0, max, allowed, missing };
+  return {
+    ok: max <= allowed && missing.length === 0,
+    max,
+    allowed,
+    missing,
+    reserved: specs.length - assigned.length,
+  };
 }
 
 /** The share of specs that repeat a look someone else already wears. */

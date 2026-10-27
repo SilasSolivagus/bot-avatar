@@ -93,14 +93,16 @@ Every view is URL state, so a link reproduces it:
 | Parameter | Meaning |
 | --- | --- |
 | `pack` | Pack id. Missing or unknown falls back to the first known pack. |
-| `ids` | Comma-separated identities, trimmed and de-duplicated, at most 60. Missing means the pack's balanced wall of 40. |
+| `id` | One identity per parameter, repeated. Read verbatim (a comma or edge whitespace stays in the identity), de-duplicated and capped at 60. Missing means the pack's balanced wall of 40. |
+| `ids` | Legacy comma-separated list, read only when no `id` is present. Trimmed and de-duplicated, at most 60. |
 | `size` | Cell size, integer 48–512, default 160. |
 | `service` | Optional `http(s)` base for the PNG link, for example `http://127.0.0.1:8787`. Not part of the wall state; it survives pack and identity changes. |
 
-`/?pack=organic-blob&ids=alice,bob&size=160` is a shareable view. The banner above the wall reports
-**balance** — the busiest look's count against `ceil(n / looks)` — and the strip below reports
-**distinctness**, one identity per assignable look. [docs/m2-gallery.md](docs/m2-gallery.md) explains
-both, and why §12's duplicate-rate criterion was replaced.
+`/?pack=organic-blob&id=alice&id=bob&size=160` is a shareable view. The banner above the wall reports
+**balance** — the busiest assignable look's count against `ceil(n / looks)`, with reserved looks counted
+separately — and the strip below reports **distinctness**, one identity per assignable look.
+[docs/m2-gallery.md](docs/m2-gallery.md) explains both, and why §12's duplicate-rate criterion was
+replaced.
 
 ## What you get back
 
@@ -238,7 +240,7 @@ const look = pickLeastUsed(looks, looksAlreadyUsed, random);
 ```bash
 pnpm install
 pnpm gallery     # Vite dev server for the gallery (no service needed)
-pnpm test        # builds, then runs 24 files / 236 tests
+pnpm test        # builds, then runs 24 files / 253 tests
 pnpm parity      # replays the frozen upstream snapshot (7 tests)
 pnpm typecheck
 pnpm build

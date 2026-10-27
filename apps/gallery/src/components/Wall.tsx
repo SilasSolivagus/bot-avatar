@@ -41,9 +41,12 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
   const spread = useMemo(() => distinctness(strip), [strip]);
   const balanceLabel =
     `${result.ok ? "Balanced" : "Unbalanced"}: busiest look max ${result.max}, ` +
-    `allowed ${result.allowed}, across ${specs.length} identities and ${looks.length} looks.` +
+    `allowed ${result.allowed}, across ${specs.length} identities and ${looks.length} assignable looks.` +
     (result.missing.length > 0
       ? ` Missing looks: ${result.missing.map((look) => `#${look}`).join(", ")}.`
+      : "") +
+    (result.reserved > 0
+      ? ` A reserved look is present in ${result.reserved} identities and is not part of the assignment pool.`
       : "");
 
   return (
@@ -54,11 +57,17 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
           max {result.max} vs allowed {result.allowed}
         </span>
         <span className="balance-detail">
-          {specs.length} identities across {looks.length} looks
+          {specs.length} identities across {looks.length} assignable looks
         </span>
         {result.missing.length > 0 && (
           <span className="balance-detail">
             missing looks {result.missing.map((look) => `#${look}`).join(", ")}
+          </span>
+        )}
+        {result.reserved > 0 && (
+          <span className="balance-detail">
+            reserved look present · {result.reserved}{" "}
+            {result.reserved === 1 ? "identity is" : "identities are"} outside the assignment pool
           </span>
         )}
       </div>
