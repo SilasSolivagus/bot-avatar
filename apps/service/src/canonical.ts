@@ -32,6 +32,11 @@ function write(value: unknown, seen: Set<object>): string {
           }
           return `[${entries.join(",")}]`;
         }
+        const proto = Object.getPrototypeOf(object) as object | null;
+        if (proto !== null && proto !== Object.prototype) {
+          const name = (proto.constructor as { name?: string } | undefined)?.name;
+          throw new CanonicalError(`cannot canonicalise ${name ?? "an object with a non-plain prototype"}`);
+        }
         const entries = Object.keys(object as Record<string, unknown>)
           .sort()
           .map((key) => {

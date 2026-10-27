@@ -51,6 +51,35 @@ describe("canonicalJson", () => {
     expect(canonicalJson({ a: -0 })).toBe('{"a":0}');
   });
 
+  it("refuses a Date instead of serialising it as an empty object", () => {
+    expect(() => canonicalJson(new Date(0))).toThrow(CanonicalError);
+    expect(() => canonicalJson(new Date(0))).toThrow(/Date/);
+  });
+
+  it("refuses a Map instead of serialising it as an empty object", () => {
+    expect(() => canonicalJson(new Map([["a", 1]]))).toThrow(CanonicalError);
+    expect(() => canonicalJson(new Map([["a", 1]]))).toThrow(/Map/);
+  });
+
+  it("refuses a Set instead of serialising it as an empty object", () => {
+    expect(() => canonicalJson(new Set([1]))).toThrow(CanonicalError);
+    expect(() => canonicalJson(new Set([1]))).toThrow(/Set/);
+  });
+
+  it("refuses a class instance and names its constructor", () => {
+    class Pack {
+      id = "x";
+    }
+    expect(() => canonicalJson(new Pack())).toThrow(CanonicalError);
+    expect(() => canonicalJson(new Pack())).toThrow(/Pack/);
+  });
+
+  it("still accepts a plain object with a null prototype", () => {
+    const bare = Object.create(null) as Record<string, unknown>;
+    bare.a = 1;
+    expect(canonicalJson(bare)).toBe('{"a":1}');
+  });
+
   it("round-trips plain JSON values", () => {
     expect(canonicalJson(null)).toBe("null");
     expect(canonicalJson("hi")).toBe('"hi"');
