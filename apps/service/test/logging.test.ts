@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { organicBlob } from "@botavatar/pack-organic-blob";
 import { createApp } from "../src/app.js";
+import { builtinPacks } from "../src/packs.js";
 
-function recording(packs = [organicBlob]) {
+function recording(packs = builtinPacks()) {
   const lines: string[] = [];
   const app = createApp({ packs, logger: (line) => lines.push(line) });
   return { app, lines };

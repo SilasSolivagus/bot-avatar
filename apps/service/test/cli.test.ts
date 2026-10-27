@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const clay = fileURLToPath(new URL("./fixtures/clay-pack.ts", import.meta.url));
 const missing = fileURLToPath(new URL("./fixtures/does-not-exist.ts", import.meta.url));
 const crlf = fileURLToPath(new URL("./fixtures/crlf-pack.ts", import.meta.url));
+const typed = fileURLToPath(new URL("./fixtures/typed-pack.ts", import.meta.url));
 const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 
 /** Runs the built CLI; a non-zero exit is reported as data rather than thrown. */
@@ -65,6 +66,12 @@ describe("main startup validation", () => {
     await expect(main(["--pack", crlf])).rejects.toThrow(/crlf-pack\.ts/);
     await expect(main(["--pack", crlf])).rejects.toThrow(/id/);
   });
+
+  it("rejects a string eye coordinate at startup, naming the exact field", async () => {
+    await expect(main(["--pack", typed])).rejects.toThrow(PackError);
+    await expect(main(["--pack", typed])).rejects.toThrow(/typed-pack\.ts/);
+    await expect(main(["--pack", typed])).rejects.toThrow(/eyes\.eyes\[0\]\.x/);
+  });
 });
 
 describe("built CLI", () => {
@@ -73,6 +80,14 @@ describe("built CLI", () => {
     expect(code).toBe(1);
     expect(stderr).toContain("crlf-pack.ts");
     expect(stderr).toContain("id");
+    expect(stderr).not.toMatch(/\n\s+at /);
+  });
+
+  it("exits non-zero for a type-broken pack and names the eye field", async () => {
+    const { code, stderr } = await runCli(["--pack", typed]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("typed-pack.ts");
+    expect(stderr).toContain("eyes.eyes[0].x");
     expect(stderr).not.toMatch(/\n\s+at /);
   });
 

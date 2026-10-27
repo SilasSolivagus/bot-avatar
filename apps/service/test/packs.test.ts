@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { builtinPacks, loadPack, PackError, validatePack } from "../src/packs.js";
+import { builtinPacks, loadPack, PackError, parsePack } from "../src/packs.js";
 
 const clay = fileURLToPath(new URL("./fixtures/clay-pack.ts", import.meta.url));
 const named = fileURLToPath(new URL("./fixtures/named-pack.ts", import.meta.url));
@@ -51,9 +51,9 @@ describe("loadPack", () => {
   });
 });
 
-describe("validatePack", () => {
+describe("parsePack", () => {
   it("accepts the builtin pack", () => {
-    expect(validatePack(builtinPacks()[0], "builtin").id).toBe("organic-blob");
+    expect(parsePack(builtinPacks()[0], "builtin").id).toBe("organic-blob");
   });
 
   it("warns when a pack is too large to render exhaustively", () => {
@@ -67,7 +67,7 @@ describe("validatePack", () => {
       warnings.push(line);
     });
     try {
-      validatePack(huge, "/tmp/huge.ts");
+      parsePack(huge, "/tmp/huge.ts");
     } finally {
       warn.mockRestore();
     }
@@ -83,31 +83,31 @@ describe("validatePack", () => {
 
   it("names the file and the missing field", () => {
     const broken = { id: "x", name: "X", version: "1.0.0" };
-    expect(() => validatePack(broken, "/tmp/broken.ts")).toThrow(PackError);
-    expect(() => validatePack(broken, "/tmp/broken.ts")).toThrow(/\/tmp\/broken\.ts/);
-    expect(() => validatePack(broken, "/tmp/broken.ts")).toThrow(/shapes/);
+    expect(() => parsePack(broken, "/tmp/broken.ts")).toThrow(PackError);
+    expect(() => parsePack(broken, "/tmp/broken.ts")).toThrow(/\/tmp\/broken\.ts/);
+    expect(() => parsePack(broken, "/tmp/broken.ts")).toThrow(/shapes/);
   });
 
   it("rejects a pack with no shapes", () => {
-    expect(() => validatePack({ ...builtinPacks()[0], shapes: [] }, "x")).toThrow(/shapes/);
+    expect(() => parsePack({ ...builtinPacks()[0], shapes: [] }, "x")).toThrow(/shapes/);
   });
 
   it("rejects a pack with no palette", () => {
-    expect(() => validatePack({ ...builtinPacks()[0], palette: [] }, "x")).toThrow(/palette/);
+    expect(() => parsePack({ ...builtinPacks()[0], palette: [] }, "x")).toThrow(/palette/);
   });
 
   it("rejects a duration table that does not match the shapes", () => {
     const pack = { ...builtinPacks()[0], motion: { durationMsByFamily: [1200], amplitude: 1 } };
-    expect(() => validatePack(pack, "x")).toThrow(/durationMsByFamily/);
+    expect(() => parsePack(pack, "x")).toThrow(/durationMsByFamily/);
   });
 });
 
-describe("validatePack metadata", () => {
+describe("parsePack metadata", () => {
   const base = builtinPacks()[0]!;
   const rejects = (patch: Record<string, unknown>, field: RegExp) => {
-    expect(() => validatePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(PackError);
-    expect(() => validatePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(/\/tmp\/bad\.ts/);
-    expect(() => validatePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(field);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(PackError);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(/\/tmp\/bad\.ts/);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/bad.ts")).toThrow(field);
   };
 
   it("rejects an id with CRLF", () => {
@@ -140,15 +140,82 @@ describe("validatePack metadata", () => {
 
   it("accepts a prerelease version", () => {
     const pack = { ...base, version: "1.2.3-beta.1" };
-    expect(validatePack(pack, "x").version).toBe("1.2.3-beta.1");
+    expect(parsePack(pack, "x").version).toBe("1.2.3-beta.1");
+  });
+
+  it("accepts semver build metadata", () => {
+    const pack = { ...base, version: "1.2.3+build.5" };
+    expect(parsePack(pack, "x").version).toBe("1.2.3+build.5");
+  });
+
+  it("rejects an empty prerelease identifier", () => {
+    rejects({ version: "1.2.3-" }, /version/);
+  });
+
+  it("rejects an empty build identifier", () => {
+    rejects({ version: "1.2.3+" }, /version/);
   });
 });
 
-describe("validatePack render conformance", () => {
+describe("parsePack field types", () => {
+  const base = builtinPacks()[0]!;
+
+  it("rejects a string eye coordinate, naming the exact path", () => {
+    const broken = structuredClone(base);
+    (broken.eyes.eyes[0] as { x: unknown }).x = "x";
+    expect(() => parsePack(broken, "/tmp/typed.ts")).toThrow(PackError);
+    expect(() => parsePack(broken, "/tmp/typed.ts")).toThrow(/\/tmp\/typed\.ts/);
+    expect(() => parsePack(broken, "/tmp/typed.ts")).toThrow(/eyes\.eyes\[0\]\.x/);
+  });
+
+  it("rejects a non-finite outline point, naming the exact path", () => {
+    const broken = structuredClone(base);
+    (broken.shapes[0] as { outline: unknown }).outline = [[Number.NaN, 0], [0, 0], [0, 10]];
+    expect(() => parsePack(broken, "x")).toThrow(/shapes\[0\]\.outline\[0\]\[0\]/);
+  });
+
+  it("rejects a non-numeric duration", () => {
+    const durationMsByFamily = base.motion.durationMsByFamily.map(() => "slow");
+    const broken = { ...base, motion: { durationMsByFamily, amplitude: 1 } };
+    expect(() => parsePack(broken, "x")).toThrow(/motion\.durationMsByFamily\[0\]/);
+  });
+
+  it("rejects a non-finite motion amplitude", () => {
+    const broken = { ...base, motion: { ...base.motion, amplitude: Number.POSITIVE_INFINITY } };
+    expect(() => parsePack(broken, "x")).toThrow(/motion\.amplitude/);
+  });
+
+  it("rejects a viewBox that is not four finite numbers", () => {
+    expect(() => parsePack({ ...base, viewBox: "-60 -60 120" }, "x")).toThrow(/viewBox/);
+  });
+});
+
+describe("parsePack diagnostics for unrepresentable data", () => {
+  const base = builtinPacks()[0]!;
+  const rejects = (patch: Record<string, unknown>, field: RegExp) => {
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/extra.ts")).toThrow(PackError);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/extra.ts")).toThrow(/\/tmp\/extra\.ts/);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/extra.ts")).toThrow(field);
+  };
+
+  it("rejects a Date extra field with its own path", () => {
+    rejects({ createdAt: new Date(0) }, /createdAt/);
+  });
+
+  it("rejects a Map extra field with its own path", () => {
+    rejects({ metadata: new Map([["a", 1]]) }, /metadata/);
+  });
+
+  it("rejects an undefined extra field with its own path", () => {
+    rejects({ note: undefined }, /note/);
+  });
+});
+
+describe("parsePack render conformance", () => {
   const base = builtinPacks()[0]!;
   const rejects = (patch: Record<string, unknown>) => {
-    expect(() => validatePack({ ...base, ...patch }, "/tmp/typed.ts")).toThrow(PackError);
-    expect(() => validatePack({ ...base, ...patch }, "/tmp/typed.ts")).toThrow(/\/tmp\/typed\.ts/);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/typed.ts")).toThrow(PackError);
+    expect(() => parsePack({ ...base, ...patch }, "/tmp/typed.ts")).toThrow(/\/tmp\/typed\.ts/);
   };
 
   it("rejects a non-string viewBox", () => {

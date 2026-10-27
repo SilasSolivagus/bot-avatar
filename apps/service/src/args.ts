@@ -1,6 +1,6 @@
-import type { StylePack } from "@botavatar/engine";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import type { ValidatedPack } from "./packs.js";
 import { builtinPacks, loadPack, PackError } from "./packs.js";
 
 export interface Args {
@@ -42,7 +42,7 @@ export function parseArgs(argv: string[]): Args {
 /** Loads the built-in packs plus every `--pack`, rejects duplicate ids, then serves. */
 export async function main(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
-  const loaded: StylePack[] = [];
+  const loaded: ValidatedPack[] = [];
   for (const path of args.packs) loaded.push(await loadPack(path));
   const packs = [...builtinPacks(), ...loaded];
   const ids = new Set<string>();

@@ -7,76 +7,247 @@ import { PackError } from "./pack-error.js";
 
 export { PackError };
 
+/**
+ * A pack that passed {@link parsePack}. The brand is type-only, so a raw `StylePack`
+ * cannot be passed off as validated; `createApp` accepts nothing else. This is the
+ * structural boundary the spec promises: unparsed packs never reach a route.
+ */
+declare const validatedPackBrand: unique symbol;
+export type ValidatedPack = StylePack & { readonly [validatedPackBrand]: true };
+
 const REQUIRED = ["id", "name", "version", "viewBox", "shapes", "palette", "eyes", "motion"] as const;
 
 /** The id lands in ETags and logs, so it is restricted to URL- and header-safe characters. */
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
-const VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+/**
+ * Semver 2.0.0: `major.minor.patch`, an optional dot-separated pre-release and optional
+ * dot-separated build metadata. Every pre-release and build identifier must be non-empty,
+ * so `1.2.3-` and `1.2.3+` are rejected while `1.2.3-beta.1` and `1.2.3+build.5` are accepted.
+ */
+const VERSION_PATTERN =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 /** C0 controls, DEL and C1 controls can break a log line or an HTTP header value. */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
+/** One plain decimal/scientific number, without the empty-string edge that `Number("")` has. */
+const NUMBER_TOKEN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-function requiredText(pack: Partial<StylePack>, field: "id" | "name" | "version", origin: string): string {
-  const value = pack[field];
+function fail(origin: string, path: string, detail: string): never {
+  throw new PackError(`${origin}: ${path} ${detail}`);
+}
+
+function expectObject(value: unknown, origin: string, path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail(origin, path, "must be an object");
+  }
+  return value as Record<string, unknown>;
+}
+
+function expectArray(value: unknown, origin: string, path: string): readonly unknown[] {
+  if (!Array.isArray(value)) fail(origin, path, "must be an array");
+  return value;
+}
+
+function expectNonEmptyString(value: unknown, origin: string, path: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new PackError(`${origin}: ${field} must be a non-empty string`);
+    fail(origin, path, "must be a non-empty string");
   }
   if (CONTROL_CHARACTER.test(value)) {
-    throw new PackError(`${origin}: ${field} contains a control character`);
+    fail(origin, path, "must not contain a control character");
   }
   return value;
 }
 
+function expectFiniteNumber(value: unknown, origin: string, path: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    fail(origin, path, "must be a finite number");
+  }
+  return value;
+}
+
+function expectPositiveNumber(value: unknown, origin: string, path: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    fail(origin, path, "must be a finite positive number");
+  }
+  return value;
+}
+
+/** `viewBox` is four finite numbers, or the renderer falls back to silent defaults. */
+function expectViewBox(value: unknown, origin: string): string {
+  if (typeof value !== "string") {
+    fail(origin, "viewBox", "must be a string of four finite numbers");
+  }
+  const parts = value.trim().split(/\s+/);
+  if (value.trim().length === 0 || parts.length !== 4) {
+    fail(origin, "viewBox", "must be a string of four finite numbers");
+  }
+  parts.forEach((part, index) => {
+    if (!NUMBER_TOKEN.test(part) || !Number.isFinite(Number(part))) {
+      fail(origin, `viewBox[${index}]`, "must be a finite number");
+    }
+  });
+  return value;
+}
+
+/** Every outline point is a finite `[x, y]` pair; a string here reaches the SVG as invalid markup. */
+function assertShapes(value: unknown, origin: string): number {
+  const shapes = expectArray(value, origin, "shapes");
+  if (shapes.length === 0) fail(origin, "shapes", "must be a non-empty array");
+  shapes.forEach((shape, family) => {
+    const path = `shapes[${family}]`;
+    const entry = expectObject(shape, origin, path);
+    const outline = expectArray(entry.outline, origin, `${path}.outline`);
+    if (outline.length === 0) fail(origin, `${path}.outline`, "must be a non-empty array");
+    outline.forEach((point, index) => {
+      const pointPath = `${path}.outline[${index}]`;
+      const pair = expectArray(point, origin, pointPath);
+      if (pair.length !== 2) fail(origin, pointPath, "must be a [number, number] pair");
+      expectFiniteNumber(pair[0], origin, `${pointPath}[0]`);
+      expectFiniteNumber(pair[1], origin, `${pointPath}[1]`);
+    });
+  });
+  return shapes.length;
+}
+
+function assertPalette(value: unknown, origin: string): void {
+  const palette = expectArray(value, origin, "palette");
+  if (palette.length === 0) fail(origin, "palette", "must be a non-empty array");
+  palette.forEach((entry, index) => {
+    const path = `palette[${index}]`;
+    const color = expectObject(entry, origin, path);
+    for (const field of ["id", "name", "light", "dark", "eye"] as const) {
+      expectNonEmptyString(color[field], origin, `${path}.${field}`);
+    }
+  });
+}
+
+/** An eye is one valid discriminator plus exactly that variant's finite geometry fields. */
+function assertEyes(value: unknown, origin: string): void {
+  const eyes = expectObject(value, origin, "eyes");
+  const entries = expectArray(eyes.eyes, origin, "eyes.eyes");
+  if (entries.length === 0) fail(origin, "eyes.eyes", "must be a non-empty array");
+  entries.forEach((eye, index) => {
+    const path = `eyes.eyes[${index}]`;
+    const entry = expectObject(eye, origin, path);
+    if (entry.kind === "rect") {
+      for (const field of ["x", "y", "width", "height", "rx"] as const) {
+        expectFiniteNumber(entry[field], origin, `${path}.${field}`);
+      }
+    } else if (entry.kind === "ellipse") {
+      for (const field of ["cx", "cy", "rx", "ry"] as const) {
+        expectFiniteNumber(entry[field], origin, `${path}.${field}`);
+      }
+    } else {
+      fail(origin, `${path}.kind`, 'must be "rect" or "ellipse"');
+    }
+  });
+  const rotation = expectObject(eyes.rotation, origin, "eyes.rotation");
+  expectFiniteNumber(rotation.modulo, origin, "eyes.rotation.modulo");
+  expectFiniteNumber(rotation.spread, origin, "eyes.rotation.spread");
+}
+
+function assertMotion(value: unknown, origin: string, familyCount: number): void {
+  const motion = expectObject(value, origin, "motion");
+  const durations = expectArray(motion.durationMsByFamily, origin, "motion.durationMsByFamily");
+  if (durations.length !== familyCount) {
+    throw new PackError(
+      `${origin}: durationMsByFamily has ${durations.length} entries for ${familyCount} shapes`,
+    );
+  }
+  durations.forEach((duration, index) => {
+    expectPositiveNumber(duration, origin, `motion.durationMsByFamily[${index}]`);
+  });
+  expectFiniteNumber(motion.amplitude, origin, "motion.amplitude");
+}
+
 /**
- * Throws unless `candidate` is a usable pack; the message names the origin and the field.
- * A pack is usable only if every body and colour it can produce renders, so a type-broken
- * pack fails at startup instead of answering 500 to the requests that hit that combination.
+ * Rejects data the canonical hash cannot represent, with the exact field path. Without
+ * this, a `Date`, `Map` or `undefined` extra field would escape `parsePack` and surface
+ * later as a bare `CanonicalError` from inside `packContentHash`, with no origin.
  */
-export function validatePack(candidate: unknown, origin: string): StylePack {
+function assertRepresentable(value: unknown, path: string, origin: string, seen: Set<object>): void {
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return;
+    case "number":
+      if (!Number.isFinite(value)) fail(origin, path, "must be a finite number");
+      return;
+    case "undefined":
+      fail(origin, path, "must not be undefined");
+      return;
+    case "object": {
+      if (value === null) return;
+      if (seen.has(value)) fail(origin, path, "must not be circular");
+      seen.add(value);
+      try {
+        if (Array.isArray(value)) {
+          // Index loop, not `forEach`: a sparse hole is an `undefined` entry to the hash.
+          for (let index = 0; index < value.length; index += 1) {
+            assertRepresentable(value[index], `${path}[${index}]`, origin, seen);
+          }
+          return;
+        }
+        const proto = Object.getPrototypeOf(value) as object | null;
+        if (proto !== null && proto !== Object.prototype) {
+          const name = (proto.constructor as { name?: string } | undefined)?.name ?? "a non-plain object";
+          fail(origin, path, `must be plain data, got ${name}`);
+        }
+        for (const key of Object.keys(value as Record<string, unknown>)) {
+          const fieldPath = path.length === 0 ? key : `${path}.${key}`;
+          assertRepresentable((value as Record<string, unknown>)[key], fieldPath, origin, seen);
+        }
+        return;
+      } finally {
+        seen.delete(value);
+      }
+    }
+    default:
+      fail(origin, path, `must be plain data, got ${typeof value}`);
+  }
+}
+
+/**
+ * The only entry into the service for pack data. Throws `PackError` unless `candidate`
+ * is a usable pack; the message names `origin` and the exact field path, so a bad pack
+ * exits at startup (through `loadPack`/`main`) instead of answering 500 per request.
+ */
+export function parsePack(candidate: unknown, origin: string): ValidatedPack {
   if (typeof candidate !== "object" || candidate === null) {
     throw new PackError(`${origin}: a pack must be an object`);
   }
-  const pack = candidate as Partial<StylePack>;
+  const pack = candidate as Record<string, unknown>;
   const missing = REQUIRED.filter((field) => pack[field] === undefined);
   if (missing.length > 0) {
     throw new PackError(`${origin}: missing ${missing.join(", ")}`);
   }
 
-  const id = requiredText(pack, "id", origin);
-  requiredText(pack, "name", origin);
-  const version = requiredText(pack, "version", origin);
+  const id = expectNonEmptyString(pack.id, origin, "id");
+  expectNonEmptyString(pack.name, origin, "name");
+  const version = expectNonEmptyString(pack.version, origin, "version");
   if (!ID_PATTERN.test(id)) {
     throw new PackError(`${origin}: id must match ${ID_PATTERN.source}`);
   }
   if (!VERSION_PATTERN.test(version)) {
-    throw new PackError(`${origin}: version must match ${VERSION_PATTERN.source}`);
-  }
-
-  if (!Array.isArray(pack.shapes) || pack.shapes.length === 0) {
-    throw new PackError(`${origin}: shapes must be a non-empty array`);
-  }
-  if (!Array.isArray(pack.palette) || pack.palette.length === 0) {
-    throw new PackError(`${origin}: palette must be a non-empty array`);
-  }
-  if (!Array.isArray(pack.motion?.durationMsByFamily)) {
-    throw new PackError(`${origin}: motion.durationMsByFamily must be an array`);
-  }
-  if (pack.motion.durationMsByFamily.length !== pack.shapes.length) {
     throw new PackError(
-      `${origin}: durationMsByFamily has ${pack.motion.durationMsByFamily.length} entries for ${pack.shapes.length} shapes`,
+      `${origin}: version must be semver (for example 1.2.3, 1.2.3-beta.1 or 1.2.3+build.5)`,
     );
   }
-  if (!Array.isArray(pack.eyes?.eyes) || pack.eyes.eyes.length === 0) {
-    throw new PackError(`${origin}: eyes.eyes must be a non-empty array`);
-  }
 
-  const usable = pack as StylePack;
+  const familyCount = assertShapes(pack.shapes, origin);
+  assertPalette(pack.palette, origin);
+  assertEyes(pack.eyes, origin);
+  assertMotion(pack.motion, origin, familyCount);
+  expectViewBox(pack.viewBox, origin);
+  assertRepresentable(pack, "", origin, new Set());
+
+  const usable = pack as unknown as StylePack;
   // Exhaustive, not a smoke request: one broken family or colour must fail at startup.
   const { rendered, sampled } = assertPackRenders(usable, origin);
   if (sampled) {
     console.warn(`${origin}: pack is large, conformance sampled ${rendered} renders`);
   }
 
-  return usable;
+  return usable as ValidatedPack;
 }
 
 /**
@@ -94,7 +265,7 @@ function packFrom(namespace: unknown): unknown {
 }
 
 /** Loads a pack module from disk. Jiti transpiles TypeScript on the fly, so no build step is needed. */
-export async function loadPack(path: string): Promise<StylePack> {
+export async function loadPack(path: string): Promise<ValidatedPack> {
   const target = isAbsolute(path) ? path : resolve(process.cwd(), path);
   // A fresh module instance per call: callers own the returned pack and may mutate it.
   const jiti = createJiti(import.meta.url, { moduleCache: false });
@@ -104,9 +275,12 @@ export async function loadPack(path: string): Promise<StylePack> {
   } catch (error) {
     throw new PackError(`${target}: could not be imported (${(error as Error).message})`);
   }
-  return validatePack(packFrom(namespace), target);
+  return parsePack(packFrom(namespace), target);
 }
 
-export function builtinPacks(): StylePack[] {
-  return [organicBlob];
+/** Parsed once at module load: the builtin is validated exactly like a `--pack` file. */
+const BUILTIN: readonly ValidatedPack[] = [parsePack(organicBlob, "builtin:organic-blob")];
+
+export function builtinPacks(): ValidatedPack[] {
+  return [...BUILTIN];
 }

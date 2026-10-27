@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import type { StylePack } from "@botavatar/engine";
 import { buildAvatarSpec } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderSvg } from "@botavatar/svg";
 import { createApp, parseIdentity } from "../src/app.js";
+import { builtinPacks, parsePack } from "../src/packs.js";
 import { packContentHash } from "../src/pack-hash.js";
 
 // Count calls without changing the hash: the real implementation still runs.
@@ -11,7 +13,16 @@ vi.mock("../src/pack-hash.js", async (importOriginal) => {
   return { ...actual, packContentHash: vi.fn(actual.packContentHash) };
 });
 
-const app = createApp({ packs: [organicBlob], logger: () => {} });
+const app = createApp({ packs: builtinPacks(), logger: () => {} });
+
+describe("pack boundary", () => {
+  it("refuses a raw StylePack at compile time", () => {
+    const raw: StylePack = structuredClone(organicBlob);
+    // @ts-expect-error createApp accepts only packs returned by parsePack
+    const attempt = () => createApp({ packs: [raw] });
+    expect(attempt).toBeTypeOf("function");
+  });
+});
 
 describe("health", () => {
   it("reports readiness and the number of packs", async () => {
@@ -211,8 +222,8 @@ describe("conditional requests", () => {
   });
 
   it("gives different packs different etags", async () => {
-    const twin = { ...structuredClone(organicBlob), id: "organic-twin" };
-    const twoPacks = createApp({ packs: [organicBlob, twin], logger: () => {} });
+    const twin = parsePack({ ...structuredClone(organicBlob), id: "organic-twin" }, "test:twin");
+    const twoPacks = createApp({ packs: [builtinPacks()[0]!, twin], logger: () => {} });
     const a = await twoPacks.request("/v1/avatar/alice.svg?pack=organic-blob");
     const b = await twoPacks.request("/v1/avatar/alice.svg?pack=organic-twin");
     expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
@@ -228,9 +239,9 @@ describe("conditional requests", () => {
   });
 
   it("hashes each pack once when the app is built, never per request", async () => {
-    const twin = { ...structuredClone(organicBlob), id: "organic-twin" };
+    const twin = parsePack({ ...structuredClone(organicBlob), id: "organic-twin" }, "test:twin");
     vi.mocked(packContentHash).mockClear();
-    const twoPacks = createApp({ packs: [organicBlob, twin], logger: () => {} });
+    const twoPacks = createApp({ packs: [builtinPacks()[0]!, twin], logger: () => {} });
     expect(packContentHash).toHaveBeenCalledTimes(2);
 
     for (const pack of ["organic-blob", "organic-twin"]) {
@@ -344,7 +355,7 @@ describe("a cache hit renders nothing", () => {
   it("answers 304 without building a spec or an svg", async () => {
     const build = vi.fn(buildAvatarSpec);
     const render = vi.fn(renderSvg);
-    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build, render });
+    const spyApp = createApp({ packs: builtinPacks(), logger: () => {}, build, render });
 
     const first = await spyApp.request("/v1/avatar/alice.svg?size=96");
     expect(first.status).toBe(200);
@@ -363,7 +374,7 @@ describe("a cache hit renders nothing", () => {
   it("still renders when the tag does not match", async () => {
     const build = vi.fn(buildAvatarSpec);
     const render = vi.fn(renderSvg);
-    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build, render });
+    const spyApp = createApp({ packs: builtinPacks(), logger: () => {}, build, render });
     const res = await spyApp.request("/v1/avatar/alice.svg", {
       headers: { "if-none-match": '"0123456789abcdef"' },
     });
@@ -373,7 +384,7 @@ describe("a cache hit renders nothing", () => {
 
   it("does not render for the json route on a cache hit either", async () => {
     const build = vi.fn(buildAvatarSpec);
-    const spyApp = createApp({ packs: [organicBlob], logger: () => {}, build });
+    const spyApp = createApp({ packs: builtinPacks(), logger: () => {}, build });
     const first = await spyApp.request("/v1/avatar/alice.json");
     const etag = first.headers.get("etag")!;
     const second = await spyApp.request("/v1/avatar/alice.json", {

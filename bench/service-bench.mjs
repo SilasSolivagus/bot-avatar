@@ -1,8 +1,7 @@
 import { Agent, request as httpRequest } from "node:http";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
-import { organicBlob } from "@botavatar/pack-organic-blob";
-import { createApp } from "../apps/service/dist/index.js";
+import { builtinPacks, createApp } from "../apps/service/dist/index.js";
 
 // apps/service is a private app, so neither it nor its dependencies are linked into the
 // root node_modules. Resolve the service's own HTTP adapter from its package instead.
@@ -53,7 +52,7 @@ if (MODE !== "200" && MODE !== "304") {
 
 const EXPECTED = MODE === "304" ? 304 : 200;
 const PATH = "/v1/avatar/alice.svg?size=128";
-const app = createApp({ packs: [organicBlob], logger: () => {} });
+const app = createApp({ packs: builtinPacks(), logger: () => {} });
 
 // Hold the warm-up connections open until every one is established. A simultaneous burst
 // of hundreds of new sockets overflows this host's accept queue (kern.ipc.somaxconn is

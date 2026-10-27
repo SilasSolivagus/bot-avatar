@@ -1,7 +1,7 @@
-import type { StylePack } from "@botavatar/engine";
 import { buildAvatarSpec } from "@botavatar/engine";
 import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
+import type { ValidatedPack } from "./packs.js";
 import { packContentHash } from "./pack-hash.js";
 import { CACHE_CONTROL, errorBody, identityHash } from "./respond.js";
 import { avatarTag, matchesIfNoneMatch, packHeader } from "./tag.js";
@@ -9,7 +9,8 @@ import { avatarTag, matchesIfNoneMatch, packHeader } from "./tag.js";
 export type Logger = (line: string) => void;
 
 export interface AppOptions {
-  packs: readonly StylePack[];
+  /** Only packs that went through `parsePack`; a raw `StylePack` is a type error. */
+  packs: readonly ValidatedPack[];
   logger?: Logger;
   /** Seam for tests: counts spec builds without changing what is served. */
   build?: typeof buildAvatarSpec;
