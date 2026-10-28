@@ -13,10 +13,27 @@ export interface AvatarRenderer<Out> {
 const escapeAttribute = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/** FNV-1a over the colour fields: stable across processes, and cheap. */
+function colorDigest(spec: AvatarSpec): string {
+  let hash = 2166136261;
+  for (const part of [spec.color.id, spec.color.light, spec.color.dark, spec.color.eye]) {
+    for (let index = 0; index < part.length; index++) {
+      hash = Math.imul(hash ^ part.charCodeAt(index), 16777619);
+    }
+    hash = Math.imul(hash ^ 0x7c, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Ids must be unique per *rendered thing*, not per identity: the same identity
+ * can be rendered twice with different colours (a pack switch, or two packs on
+ * one page), and SVG ids are document-global. Without the colour digest the
+ * second avatar silently borrows the first one's gradient.
+ */
 function gradientId(spec: AvatarSpec): string {
-  // Derived from the spec, so two renders of one spec agree; sanitised, so a
-  // pack id cannot break out of the attribute.
-  return `av-${escapeAttribute(`${spec.packId}-${spec.seed}`)}`.replace(/[^A-Za-z0-9_-]/g, "-");
+  const base = `${spec.packId}-${spec.seed}-${colorDigest(spec)}`;
+  return `av-${escapeAttribute(base)}`.replace(/[^A-Za-z0-9_-]/g, "-");
 }
 
 function eyeMarkup(spec: AvatarSpec): string {

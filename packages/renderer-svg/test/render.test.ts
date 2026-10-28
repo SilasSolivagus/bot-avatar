@@ -143,3 +143,21 @@ describe("renderSvg", () => {
     expect(shine![0]).toContain(`clip-path="url(#${clipId})"`);
   });
 });
+
+describe("element ids", () => {
+  it("gives two colours of the same identity their own gradient", () => {
+    const base = buildAvatarSpec(organicBlob, "shared-identity");
+    const other = {
+      ...base,
+      color: { id: "ink", name: "Ink", light: "#26262C", dark: "#0A0A0C", eye: "#F2F2F5" },
+    };
+    const first = renderSvg(base, { size: 48 });
+    const second = renderSvg(other, { size: 48 });
+    const idOf = (svg: string) => svg.match(/linearGradient id="([^"]+)"/)?.[1];
+    expect(idOf(first)).toBeDefined();
+    expect(idOf(second)).toBeDefined();
+    expect(idOf(first)).not.toBe(idOf(second));
+    expect(first).toContain(`fill="url(#${idOf(first)})"`);
+    expect(second).toContain(`fill="url(#${idOf(second)})"`);
+  });
+});
