@@ -6,6 +6,16 @@ export type {
   StylePack,
   Surface,
 } from "./spec.js";
+export type {
+  AvatarGeometry,
+  Body,
+  EyeRig,
+  Ink,
+  Point,
+  Pose,
+  RectEyeRig,
+  SphereEyeRig,
+} from "./geometry.js";
 export { avatarSeed } from "./seed.js";
 export { avatarAssignableLooks, avatarFamily, avatarLook } from "./family.js";
 export { outlinePath, phaseForSeed } from "./outline.js";
