@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { PROFILE_SAMPLES } from "@botavatar/engine";
 import { builtinPacks, loadPack, PackError, parsePack } from "../src/packs.js";
 import { sphereEye, spherePack } from "./sphere-pack.js";
 
@@ -243,6 +244,52 @@ describe("parsePack field types", () => {
   });
 });
 
+describe("parsePack radii shapes", () => {
+  const base = builtinPacks()[0]!;
+  const profile = Array.from({ length: PROFILE_SAMPLES }, () => 40);
+
+  const radiiPack = (radii: unknown = profile) => ({
+    ...base,
+    shapes: [{ radii }],
+    motion: {
+      durationMsByFamily: [1200],
+      amplitude: 1,
+      clipByFamily: ["breathe"],
+    },
+  });
+
+  it("accepts a 64-sample profile and renders it in the startup sweep", () => {
+    const parsed = parsePack(radiiPack(), "/tmp/radii.ts");
+    expect(parsed.shapes[0]!.radii).toHaveLength(PROFILE_SAMPLES);
+    expect(parsed.shapes[0]!.outline).toBeUndefined();
+  });
+
+  it("rejects the wrong sample count, naming the field", () => {
+    expect(() => parsePack(radiiPack(profile.slice(0, 63)), "/tmp/radii.ts")).toThrow(
+      /shapes\[0\]\.radii must have 64 samples/,
+    );
+    expect(() => parsePack(radiiPack([...profile, 1]), "/tmp/radii.ts")).toThrow(
+      /shapes\[0\]\.radii must have 64 samples/,
+    );
+  });
+
+  it("names the exact sample when it is zero, negative or not finite", () => {
+    for (const value of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const broken = [...profile];
+      broken[7] = value;
+      expect(() => parsePack(radiiPack(broken), "/tmp/radii.ts")).toThrow(
+        /shapes\[0\]\.radii\[7\] must be a finite positive number/,
+      );
+    }
+  });
+
+  it("rejects a profile whose sum overflows", () => {
+    expect(() => parsePack(radiiPack(new Array(PROFILE_SAMPLES).fill(1e308)), "/tmp/radii.ts")).toThrow(
+      /shapes\[0\]\.radii must have a finite sum/,
+    );
+  });
+});
+
 describe("parsePack diagnostics for unrepresentable data", () => {
   const base = builtinPacks()[0]!;
   const rejects = (patch: Record<string, unknown>, field: RegExp) => {
@@ -275,8 +322,15 @@ describe("parsePack render conformance", () => {
     rejects({ viewBox: 123 });
   });
 
-  it("rejects a shape with no outline", () => {
+  it("rejects a shape with neither outline nor radii", () => {
     rejects({ shapes: [{}], motion: { durationMsByFamily: [1200], amplitude: 1 } });
+  });
+
+  it("rejects a shape that declares both representations", () => {
+    const shape = { ...base.shapes[0]!, radii: new Array(PROFILE_SAMPLES).fill(40) };
+    expect(() => parsePack({ ...base, shapes: [shape] }, "/tmp/typed.ts")).toThrow(
+      /shapes\[0\] must have exactly one of outline or radii/,
+    );
   });
 
   it("rejects a palette entry with no colours", () => {

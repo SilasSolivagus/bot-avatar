@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { avatarSampleIdentity, buildGeometry } from "@botavatar/engine";
+import { PROFILE_SAMPLES, avatarSampleIdentity, buildGeometry } from "@botavatar/engine";
 import { organicBlob, palette } from "@botavatar/pack-organic-blob";
 import { galleryPacks } from "../src/packs.js";
+import { art, artEyes, artPalette, artShapes, SHAPE_SCALE } from "../src/packs/art.js";
 import { clay } from "../src/packs/clay.js";
 import { geo, geoEyes, geoShapes } from "../src/packs/geo.js";
 import { orb, orbEyes } from "../src/packs/orb.js";
@@ -172,5 +173,146 @@ describe("geo demo pack", () => {
   it("appears once in the switcher", () => {
     const ids = galleryPacks().map((entry) => entry.pack.id);
     expect(ids.filter((id) => id === "geo")).toHaveLength(1);
+  });
+});
+
+/** Area enclosed by a radial profile, for comparing visual weight. */
+function profileArea(radii: readonly number[]): number {
+  let area = 0;
+  for (let index = 0; index < radii.length; index++) {
+    const next = (index + 1) % radii.length;
+    area += radii[index]! * radii[next]! * Math.sin((Math.PI * 2) / radii.length);
+  }
+  return area / 2;
+}
+
+/** Indices whose sample is strictly larger than both neighbours on the 64-wheel. */
+function localPeaks(radii: readonly number[]): number[] {
+  return radii
+    .map((radius, index) =>
+      radius > radii[(index - 1 + radii.length) % radii.length]! &&
+      radius > radii[(index + 1) % radii.length]!
+        ? index
+        : -1,
+    )
+    .filter((index) => index >= 0);
+}
+
+describe("art demo pack", () => {
+  it("is an eight-shape, twelve-colour radii pack", () => {
+    expect(art.id).toBe("art");
+    expect(art.name).toBe("Art");
+    expect(art.version).toBe("0.1.0");
+    expect(art.viewBox).toBe("-60 -60 120 120");
+    expect(art.assignment).toBe("hash-only");
+    expect(art.surface).toBeUndefined();
+    expect(art.shapes).toHaveLength(8);
+    expect(art.palette).toHaveLength(12);
+    expect(art.motion.durationMsByFamily).toHaveLength(8);
+    expect(art.motion.clipByFamily).toHaveLength(8);
+
+    for (const shape of art.shapes) {
+      expect(shape.outline).toBeUndefined();
+      expect(shape.radii).toHaveLength(PROFILE_SAMPLES);
+      expect(shape.radii!.every((radius) => Number.isFinite(radius) && radius > 0)).toBe(true);
+    }
+  });
+
+  it("normalizes every shape to its documented visual weight", () => {
+    expect(artShapes.map((shape) => shape.id)).toEqual([
+      "circle",
+      "pebble",
+      "squircle",
+      "capsule",
+      "triangle",
+      "hexagon",
+      "cloud",
+      "droplet",
+    ]);
+    expect(artShapes.map((shape) => shape.target)).toEqual([1, 1.02, 1.15, 1, 1, 1, 1.02, 1.04]);
+    for (const shape of artShapes) {
+      expect(Math.max(...shape.radii)).toBeCloseTo(SHAPE_SCALE * shape.target, 6);
+    }
+  });
+
+  it("keeps the squircle no lighter than the circle, so it cannot read as small", () => {
+    const circle = artShapes[0]!.radii;
+    const squircle = artShapes[2]!.radii;
+    // Normalizing a superellipse by its diagonal peak makes its axis shorter than the
+    // circle's; 1.15 buys back enough area that the square does not read smaller.
+    expect(squircle[0]!).toBeGreaterThan(circle[0]! * 0.94);
+    expect(profileArea(squircle)).toBeGreaterThanOrEqual(profileArea(circle));
+  });
+
+  it("keeps the hexagon's six corners distinct", () => {
+    const hexagon = artShapes[5]!.radii;
+    const peaks = localPeaks(hexagon);
+    expect(peaks).toHaveLength(6);
+    // Corners stay real: the profile still dips at the flat edges. A smoothed-away
+    // hexagon would approach a constant radius.
+    expect(Math.min(...hexagon) / Math.max(...hexagon)).toBeGreaterThan(0.85);
+  });
+
+  it("makes the pebble an irregular stone, not a crushed balloon", () => {
+    const pebble = artShapes[1]!.radii;
+    const max = Math.max(...pebble);
+    const min = Math.min(...pebble);
+    // Two low harmonics, exactly as the evidence doc describes: a small perturbation.
+    expect(min / max).toBeGreaterThan(0.78);
+    expect(min / max).toBeLessThan(0.85);
+    expect(localPeaks(pebble).length).toBeLessThanOrEqual(3);
+    expect(max - min).toBeGreaterThan(0.15 * max);
+  });
+
+  it("carries the sphere rig and derives the face from each profile", () => {
+    expect(artEyes.sphereRadius).toBe(44);
+    expect(artEyes.bodyCoupling).toBe(0.35);
+    expect(artEyes.bodyPitchFollow).toBe(0.35);
+    expect(artEyes.restTiltDeg).toBe(-4);
+    expect(artEyes.fadeFromDepth).toBe(0.12);
+    expect(artEyes.cullAtDepth).toBe(0.02);
+    expect((art.eyes as unknown as { kind?: string }).kind).toBe("sphere");
+
+    for (let family = 0; family < art.shapes.length; family++) {
+      const geometry = buildGeometry(art, avatarSampleIdentity(art, family));
+      expect(geometry.family).toBe(family);
+      expect(geometry.body.radii).toHaveLength(PROFILE_SAMPLES);
+      if (geometry.rig.kind !== "sphere") throw new Error("art is a sphere pack");
+      const [left, right] = geometry.rig.eyes;
+      expect(left.halfWidth).toBeGreaterThan(0);
+      expect(left.halfHeight).toBeGreaterThan(0);
+      expect(left.halfWidth).toBeCloseTo(right.halfWidth, 6);
+      expect(left.lateralDeg).toBeCloseTo(-right.lateralDeg, 6);
+      expect(left.tiltDeg).toBe(-4);
+      expect(right.tiltDeg).toBe(-4);
+      expect(geometry.rig.anchorY).toBeLessThan(0);
+    }
+  });
+
+  it("spans dark to light with twelve distinct colours", () => {
+    const ids = new Set(artPalette.map((color) => color.id));
+    expect(ids.size).toBe(12);
+    for (const color of artPalette) {
+      expect(color.light).toMatch(/^#[0-9A-F]{6}$/);
+      expect(color.dark).toMatch(/^#[0-9A-F]{6}$/);
+      expect(color.eye).toMatch(/^#[0-9A-F]{6}$/);
+      expect(color.light).not.toBe(color.dark);
+    }
+    const luminance = (hex: string): number => {
+      const channels = [1, 3, 5].map((offset) => {
+        const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+    };
+    const inks = artPalette.map((color) => luminance(color.dark));
+    expect(Math.min(...inks)).toBeLessThan(0.02);
+    expect(luminance(artPalette.find((color) => color.id === "cream")!.light)).toBeGreaterThan(0.8);
+  });
+
+  it("appears once in the switcher, labelled from its file", () => {
+    const entries = galleryPacks();
+    expect(entries.filter((entry) => entry.pack.id === "art")).toHaveLength(1);
+    expect(entries.find((entry) => entry.pack.id === "art")?.label).toBe("Art (art)");
   });
 });

@@ -11,6 +11,7 @@ import {
   buildGeometry,
   outlinePath,
   phaseForSeed,
+  radiiToPath,
   radiusAtAngle,
 } from "@botavatar/engine";
 import { renderGeometry, renderSvg } from "@botavatar/svg";
@@ -71,7 +72,10 @@ interface Combo {
 /**
  * The spec the renderer would receive for one family and colour. `buildAvatarSpec`
  * derives both from a hash, so the sweep builds this directly instead: the body comes
- * from that family's outline, the colour from that palette entry.
+ * from that family's representation, the colour from that palette entry.
+ *
+ * A `radii` family draws its 64 samples directly, exactly as `buildAvatarSpec` does;
+ * an `outline` family keeps the v1 phase/smoothing pipeline byte for byte.
  */
 function specFor(
   pack: StylePack,
@@ -89,10 +93,12 @@ function specFor(
     family,
     look: shape.look ?? family,
     color,
-    path: outlinePath(shape.outline, {
-      phase: phaseForSeed(seed),
-      smoothingPasses: shape.smoothingPasses,
-    }),
+    path: shape.radii
+      ? radiiToPath(shape.radii)
+      : outlinePath(shape.outline, {
+          phase: phaseForSeed(seed),
+          smoothingPasses: shape.smoothingPasses,
+        }),
     eyes: pack.eyes.eyes,
     eyeRotation: (seed % pack.eyes.rotation.modulo) - pack.eyes.rotation.spread,
     durationMs: pack.motion.durationMsByFamily[family] ?? 1800,

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  avatarSampleIdentity,
   buildAvatarSpec,
   buildGeometry,
+  normalizeRadii,
   projectEye,
+  radiiShape,
+  radiiToPath,
   radiusAtAngle,
+  regularPolygonProfile,
+  superellipseProfile,
   toGeometry,
 } from "@botavatar/engine";
-import type { SphereEyeRig, Surface } from "@botavatar/engine";
+import type { SphereEyeRig, StylePack, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { fitEyeToOutline, renderGeometry, renderSvg } from "../src/index.js";
 
@@ -611,5 +617,68 @@ describe("fitEyeToOutline", () => {
     ];
     const fitted = fitEyeToOutline(diamond, 10, 0, 3, 3);
     expect(fitted).toEqual({ x: 0, y: 0, clamped: true });
+  });
+});
+
+/**
+ * A sphere pack whose bodies are radius profiles. The sphere branch must draw the
+ * profile itself: feeding `radiiToPoints` through the v1 outline pipeline would add
+ * the per-identity phase distortion and two Chaikin passes, which is exactly the
+ * hand-drawn model the profiles replaced.
+ */
+describe("sphere rig with radii families", () => {
+  const radiusOrb = {
+    ...organicBlob,
+    id: "radius-orb",
+    name: "Radius Orb",
+    version: "0.1.0",
+    shapes: [
+      radiiShape(normalizeRadii(regularPolygonProfile(6, 1.04, 0.26, 0), 46)),
+      radiiShape(normalizeRadii(superellipseProfile(4.2), 46 * 1.15)),
+    ],
+    eyes: (orbPack as unknown as StylePack).eyes,
+    motion: {
+      durationMsByFamily: [1800, 1800],
+      amplitude: 1,
+      clipByFamily: ["breathe", "breathe"] as const,
+    },
+  } as unknown as StylePack;
+
+  it("draws each profile directly, with no phase distortion or smoothing", () => {
+    for (const family of [0, 1] as const) {
+      const geometry = buildGeometry(radiusOrb, avatarSampleIdentity(radiusOrb, family));
+      expect(geometry.family).toBe(family);
+      const radii = radiusOrb.shapes[family]!.radii!;
+      const svg = renderGeometry(geometry, { size: 96 });
+      expect(svg).toContain(`d="${radiiToPath(radii)}"`);
+    }
+  });
+
+  it("still derives the eyes from the same profile", () => {
+    const geometry = buildGeometry(radiusOrb, avatarSampleIdentity(radiusOrb, 0));
+    if (geometry.rig.kind !== "sphere") throw new Error("expected a sphere rig");
+    expect(geometry.rig.eyes[0].halfWidth).toBeGreaterThan(0);
+    expect(geometry.rig.eyes[0].lateralDeg).toBeCloseTo(-geometry.rig.eyes[1].lateralDeg, 6);
+    const svg = renderGeometry(geometry, { size: 96 });
+    expect(svg).not.toContain("NaN");
+  });
+});
+
+/** The rect-eye fold must honor a profile too; only the legacy `outline` keeps v1. */
+describe("radii families with rect eyes", () => {
+  const radii = normalizeRadii(superellipseProfile(4.2), 46 * 1.15);
+  const pack = {
+    ...organicBlob,
+    id: "radius-rect",
+    name: "Radius Rect",
+    version: "0.1.0",
+    shapes: [radiiShape(radii)],
+  } as unknown as StylePack;
+
+  it("renders the profile path instead of the smoothed derived polygon", () => {
+    const geometry = buildGeometry(pack, avatarSampleIdentity(pack, 0));
+    expect(geometry.rig.kind).toBe("rect");
+    const svg = renderGeometry(geometry, { size: 96 });
+    expect(svg).toContain(`d="${radiiToPath(radii)}"`);
   });
 });

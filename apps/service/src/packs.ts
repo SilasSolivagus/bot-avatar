@@ -1,4 +1,4 @@
-import { CLIP_NAMES } from "@botavatar/engine";
+import { CLIP_NAMES, PROFILE_SAMPLES } from "@botavatar/engine";
 import type { ClipName, StylePack } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { createJiti } from "jiti";
@@ -97,21 +97,58 @@ function expectViewBox(value: unknown, origin: string): string {
 }
 
 /** Every outline point is a finite `[x, y]` pair; a string here reaches the SVG as invalid markup. */
+function assertOutline(outline: readonly unknown[], origin: string, path: string): void {
+  if (outline.length === 0) fail(origin, path, "must be a non-empty array");
+  outline.forEach((point, index) => {
+    const pointPath = `${path}[${index}]`;
+    const pair = expectArray(point, origin, pointPath);
+    if (pair.length !== 2) fail(origin, pointPath, "must be a [number, number] pair");
+    expectFiniteNumber(pair[0], origin, `${pointPath}[0]`);
+    expectFiniteNumber(pair[1], origin, `${pointPath}[1]`);
+  });
+}
+
+/**
+ * A radius profile is exactly `PROFILE_SAMPLES` samples, every one positive and
+ * finite, with a finite sum. Validated here with the same rigour as an outline rather
+ * than left to the engine: a malformed profile must fail at startup, naming the
+ * sample, not turn into a NaN path on the request that happens to draw it.
+ */
+function assertRadiiProfile(radii: readonly unknown[], origin: string, path: string): void {
+  if (radii.length !== PROFILE_SAMPLES) {
+    fail(origin, path, `must have ${PROFILE_SAMPLES} samples, got ${radii.length}`);
+  }
+  let sum = 0;
+  radii.forEach((radius, index) => {
+    const samplePath = `${path}[${index}]`;
+    const value = expectPositiveNumber(radius, origin, samplePath);
+    sum += value;
+  });
+  if (!Number.isFinite(sum)) fail(origin, path, "must have a finite sum");
+}
+
+/**
+ * A family carries exactly one representation: a polygon `outline` or a 64-sample
+ * `radii` profile. Requiring exactly one keeps the two render paths unambiguous.
+ */
 function assertShapes(value: unknown, origin: string): number {
   const shapes = expectArray(value, origin, "shapes");
   if (shapes.length === 0) fail(origin, "shapes", "must be a non-empty array");
   shapes.forEach((shape, family) => {
     const path = `shapes[${family}]`;
     const entry = expectObject(shape, origin, path);
-    const outline = expectArray(entry.outline, origin, `${path}.outline`);
-    if (outline.length === 0) fail(origin, `${path}.outline`, "must be a non-empty array");
-    outline.forEach((point, index) => {
-      const pointPath = `${path}.outline[${index}]`;
-      const pair = expectArray(point, origin, pointPath);
-      if (pair.length !== 2) fail(origin, pointPath, "must be a [number, number] pair");
-      expectFiniteNumber(pair[0], origin, `${pointPath}[0]`);
-      expectFiniteNumber(pair[1], origin, `${pointPath}[1]`);
-    });
+    const hasOutline = entry.outline !== undefined;
+    const hasRadii = entry.radii !== undefined;
+    if (hasOutline === hasRadii) {
+      fail(origin, path, "must have exactly one of outline or radii");
+    }
+    if (hasRadii) {
+      const radiiPath = `${path}.radii`;
+      const radii = expectArray(entry.radii, origin, radiiPath);
+      assertRadiiProfile(radii, origin, radiiPath);
+      return;
+    }
+    assertOutline(expectArray(entry.outline, origin, `${path}.outline`), origin, `${path}.outline`);
   });
   return shapes.length;
 }

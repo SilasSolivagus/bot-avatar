@@ -1,4 +1,4 @@
-import { clipFrame, outlinePath, projectEye, radiusAtAngle } from "@botavatar/engine";
+import { clipFrame, outlinePath, projectEye, radiiToPath, radiusAtAngle } from "@botavatar/engine";
 import type {
   AvatarGeometry,
   AvatarSpec,
@@ -286,8 +286,13 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
 
 /**
  * The sphere rig draws itself: no `AvatarSpec` can express it, since `AvatarSpec.eyes`
- * only holds rects. The body comes from the outline, the eyes from `projectEye`, and
+ * only holds rects. The body comes from the geometry, the eyes from `projectEye`, and
  * the gradient from the ink.
+ *
+ * A `radii` body draws its 64 profile samples directly, with no identity phase
+ * distortion and no Chaikin smoothing: for the profile model the samples are the
+ * shape (`docs/design/2026-10-28-shape-profiles.md` §1). An `outline` body keeps the
+ * v1 pipeline byte for byte.
  *
  * Each eye is a true capsule in local space: the projection is decomposed into a
  * rotation and two half-extents, and the rect is drawn at that size with its own
@@ -307,10 +312,12 @@ function renderSphere(
   const pixels = Math.max(1, Math.round(size));
   const working = state === "working";
   const id = geometryId(geometry);
-  const path = outlinePath(geometry.body.outline, {
-    phase: geometry.body.phase,
-    smoothingPasses: geometry.body.smoothingPasses,
-  });
+  const path = geometry.body.radii
+    ? radiiToPath(geometry.body.radii)
+    : outlinePath(geometry.body.outline, {
+        phase: geometry.body.phase,
+        smoothingPasses: geometry.body.smoothingPasses,
+      });
 
   // Body coupling splits the *same* total yaw between head and eyes: the group takes
   // `yaw × coupling`, the projection keeps `yaw × (1 − coupling)`. Rotating the group
@@ -424,10 +431,12 @@ export function renderGeometry(geometry: AvatarGeometry, options: RenderOptions)
       eye: geometry.ink.eyes,
     },
     surface: geometry.surface,
-    path: outlinePath(geometry.body.outline, {
-      phase: geometry.body.phase,
-      smoothingPasses: geometry.body.smoothingPasses,
-    }),
+    path: geometry.body.radii
+      ? radiiToPath(geometry.body.radii)
+      : outlinePath(geometry.body.outline, {
+          phase: geometry.body.phase,
+          smoothingPasses: geometry.body.smoothingPasses,
+        }),
     eyes: rig.eyes,
     eyeRotation: rig.rotationDeg,
     durationMs: geometry.durationMs,
