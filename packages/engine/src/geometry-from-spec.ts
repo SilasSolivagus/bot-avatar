@@ -32,6 +32,8 @@ export function toGeometry(pack: StylePack, spec: AvatarSpec): AvatarGeometry {
       bodyId: spec.color.id,
       bodyName: spec.color.name,
     },
+    // The renderer consumes `spec.surface`, so that is the value geometry must carry.
+    surface: spec.surface,
     durationMs: spec.durationMs,
     motionAmplitude: spec.motionAmplitude,
     clip: spec.clip,

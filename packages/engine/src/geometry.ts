@@ -1,4 +1,5 @@
 import type { ClipName } from "./clips.js";
+import type { Surface } from "./spec.js";
 
 export type Point = readonly [number, number];
 
@@ -70,6 +71,11 @@ export interface AvatarGeometry {
   rig: EyeRig;
   pose: Pose;
   ink: Ink;
+  /**
+   * 材质词汇：渐变 stops、高光、阴影、纹理。v1 的 spec.surface 原样带过来；
+   * 渲染器读的就是 spec.surface，所以几何必须携带它，材质包才自足。
+   */
+  surface?: Surface;
   /** 循环时长，毫秒；v1 的 durationMs */
   durationMs: number;
   motionAmplitude: number;

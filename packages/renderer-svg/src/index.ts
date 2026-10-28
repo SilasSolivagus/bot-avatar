@@ -215,6 +215,7 @@ export function renderGeometry(geometry: AvatarGeometry, options: RenderOptions)
       dark: geometry.ink.bodyHighlight,
       eye: geometry.ink.eyes,
     },
+    surface: geometry.surface,
     path: outlinePath(geometry.body.outline, {
       phase: geometry.body.phase,
       smoothingPasses: geometry.body.smoothingPasses,

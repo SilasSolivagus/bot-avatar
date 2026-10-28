@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAvatarSpec, toGeometry } from "@botavatar/engine";
-import type { AvatarGeometry } from "@botavatar/engine";
+import type { AvatarGeometry, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "../src/index.js";
 
@@ -173,6 +173,30 @@ describe("renderGeometry", () => {
             renderSvg(spec, { size, state }),
           );
         }
+      }
+    }
+  });
+
+  it("matches renderSvg byte for byte for a surfaced spec", () => {
+    const base = buildAvatarSpec(organicBlob, "alice");
+    const surfaces: Surface[] = [
+      {
+        stops: [
+          { offset: 0, color: "#FFFFFF" },
+          { offset: 0.5, color: "#FF9F43" },
+          { offset: 1, color: "#C2410C" },
+        ],
+        highlight: { cx: -20, cy: -18, r: 14, opacity: 0.55 },
+        shadow: { dx: 0, dy: 4, blur: 6, color: "#000000" },
+      },
+      { texture: { kind: "grain", opacity: 0.1 } },
+    ];
+    for (const surface of surfaces) {
+      const spec = { ...base, surface };
+      for (const state of ["idle", "working"] as const) {
+        expect(renderGeometry(toGeometry(organicBlob, spec), { size: 96, state })).toBe(
+          renderSvg(spec, { size: 96, state }),
+        );
       }
     }
   });
