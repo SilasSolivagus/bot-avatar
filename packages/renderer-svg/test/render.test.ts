@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec, toGeometry } from "@botavatar/engine";
-import type { AvatarGeometry, Surface } from "@botavatar/engine";
+import { buildAvatarSpec, buildGeometry, projectEye, toGeometry } from "@botavatar/engine";
+import type { SphereEyeRig, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "../src/index.js";
 
@@ -201,21 +201,146 @@ describe("renderGeometry", () => {
     }
   });
 
-  it("refuses a rig it cannot draw yet", () => {
-    const geometry = toGeometry(organicBlob, buildAvatarSpec(organicBlob, "alice"));
-    const sphere: AvatarGeometry = {
-      ...geometry,
-      rig: {
-        kind: "sphere",
-        sphereRadius: 60,
-        eyes: [
-          { lateralDeg: -18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },
-          { lateralDeg: 18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },
-        ],
-        fadeFromDepth: 0.25,
-        cullAtDepth: -0.15,
-      },
-    };
-    expect(() => renderGeometry(sphere, { size: 32 })).toThrow(/sphere/i);
+});
+
+/** The plan's orb pack: organic-blob's body and palette, sphere eyes, no v1 `rotation`. */
+const orbPack = {
+  ...organicBlob,
+  id: "orb",
+  name: "Orb",
+  version: "0.1.0",
+  eyes: {
+    kind: "sphere",
+    sphereRadius: 44,
+    eyes: [
+      { lateralDeg: 18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: -6 },
+      { lateralDeg: -18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: 6 },
+    ],
+    fadeFromDepth: 0.12,
+    cullAtDepth: 0.02,
+  },
+} as never;
+
+describe("sphere rig", () => {
+  const geometry = buildGeometry(orbPack, "alice");
+  const rig: SphereEyeRig = (() => {
+    if (geometry.rig.kind !== "sphere") throw new Error("the orb pack must build a sphere rig");
+    return geometry.rig;
+  })();
+
+  /** The attributes of every `<rect>` the sphere branch draws (the eyes). */
+  const rects = (svg: string) =>
+    [...svg.matchAll(/<rect ([^>]*?)\s*\/>/g)].map((match) => match[1]!);
+  const attribute = (element: string, name: string) =>
+    new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(element)?.[1] ?? "";
+  const matrix = (element: string) =>
+    attribute(element, "transform")
+      .slice("matrix(".length, -1)
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+  /** Same fixed-decimal rule the renderer applies, so expectations are exact. */
+  const rounded = (values: readonly number[]) => values.map((value) => Number(value.toFixed(3)) + 0);
+  const width = (values: readonly number[]) => Math.hypot(values[0]!, values[1]!);
+  const height = (values: readonly number[]) => Math.hypot(values[2]!, values[3]!);
+  const gradientId = (svg: string) => svg.match(/<linearGradient id="([^"]+)"/)?.[1];
+
+  it("draws one capsule per eye with a projection matrix", () => {
+    const svg = renderGeometry(geometry, { size: 96 });
+    const capsules = svg.match(/<rect[^>]*rx="[^"]*"[^>]*transform="matrix\(/g) ?? [];
+    expect(capsules).toHaveLength(2);
+    expect(svg).toContain('viewBox="-60 -60 120 120"');
+    expect(svg).toContain('width="96"');
+    expect(svg).toContain('height="96"');
+  });
+
+  it("centres each capsule on the origin and lets the matrix carry the translation", () => {
+    const drawn = rects(renderGeometry(geometry, { size: 96 }));
+    expect(drawn).toHaveLength(2);
+    for (const capsule of drawn) {
+      // The rect is the capsule in its own frame: matrix() already positions it.
+      expect(attribute(capsule, "x")).toBe("-4.2");
+      expect(attribute(capsule, "y")).toBe("-12.5");
+      expect(attribute(capsule, "width")).toBe("8.4");
+      expect(attribute(capsule, "height")).toBe("25");
+      expect(attribute(capsule, "rx")).toBe("4.2");
+      expect(attribute(capsule, "fill")).toBe(geometry.ink.eyes);
+    }
+    // The projection's centre is the translation column.
+    const expected = ([0, 1] as const).map((index) => projectEye(rig, geometry.pose, index).matrix);
+    expect(drawn.map(matrix)).toEqual(expected.map(rounded));
+  });
+
+  it("narrows the far eye when the gaze turns", () => {
+    const still = rects(renderGeometry(geometry, { size: 96 })).map(matrix);
+    const turned = rects(
+      renderGeometry(
+        { ...geometry, pose: { gaze: { yaw: 25, pitch: 0 }, lidOpen: 1 } },
+        { size: 96 },
+      ),
+    ).map(matrix);
+    // Positive yaw turns toward +x, where eye 1 sits: it becomes the far eye and
+    // narrows, while eye 0 swings toward the viewer and widens (until 2×lateral,
+    // past which even the near eye starts to foreshorten).
+    expect(width(turned[1]!)).toBeLessThan(width(still[1]!));
+    expect(width(turned[0]!)).toBeGreaterThan(width(still[0]!));
+    expect(width(turned[1]!)).toBeLessThan(width(turned[0]!));
+  });
+
+  it("squashes the capsules vertically when the lid closes", () => {
+    const still = rects(renderGeometry(geometry, { size: 96 })).map(matrix);
+    const shut = rects(
+      renderGeometry(
+        { ...geometry, pose: { ...geometry.pose, lidOpen: 0.25 } },
+        { size: 96 },
+      ),
+    ).map(matrix);
+    for (const index of [0, 1] as const) {
+      expect(width(shut[index]!)).toBeCloseTo(width(still[index]!), 6);
+      expect(height(shut[index]!)).toBeCloseTo(height(still[index]!) * 0.25, 2);
+    }
+  });
+
+  it("paints the body from the ink colours with a gradient id that includes them", () => {
+    const svg = renderGeometry(geometry, { size: 48 });
+    expect(svg).toContain(`<stop offset="0%" stop-color="${geometry.ink.body}" />`);
+    expect(svg).toContain(`<stop offset="100%" stop-color="${geometry.ink.bodyHighlight}" />`);
+    expect(gradientId(svg)).toBeDefined();
+    expect(svg).toContain(`fill="url(#${gradientId(svg)})"`);
+    expect(svg).toContain(`fill="${geometry.ink.eyes}"`);
+  });
+
+  it("gives two eye colours of the same body their own gradient id", () => {
+    const pink = { ...geometry, ink: { ...geometry.ink, eyes: "#FF00AA" } };
+    expect(pink.ink.eyes).not.toBe(geometry.ink.eyes);
+    const first = gradientId(renderGeometry(geometry, { size: 48 }));
+    const second = gradientId(renderGeometry(pink, { size: 48 }));
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first).not.toBe(second);
+    expect(renderGeometry(pink, { size: 48 })).toContain('fill="#FF00AA"');
+  });
+
+  it("animates the body group and a separate eye group in the working state", () => {
+    const idle = renderGeometry(geometry, { size: 96 });
+    expect(idle).not.toContain("<style");
+    expect(idle).not.toContain("class=");
+
+    const working = renderGeometry(geometry, { size: 96, state: "working" });
+    expect(working).toContain("<style>");
+    expect(working).toContain(`${geometry.durationMs}ms`);
+    expect(working).toMatch(/<g class="[^"]*-body">/);
+    expect(working).toMatch(/<g class="[^"]*-eyes">/);
+    // The eyes ride inside the body group, so head motion carries them.
+    expect(working.indexOf("-body")).toBeLessThan(working.indexOf("-eyes"));
+    const eyes = working.match(/<g class="[^"]*-eyes">(.*?)<\/g>/)?.[1] ?? "";
+    expect((eyes.match(/<rect/g) ?? [])).toHaveLength(2);
+  });
+
+  it("still renders a rect rig byte for byte as before", () => {
+    const rectSpec = buildAvatarSpec(organicBlob, "alice");
+    expect(renderGeometry(buildGeometry(organicBlob, "alice"), { size: 96 })).toBe(
+      renderSvg(rectSpec, { size: 96 }),
+    );
   });
 });

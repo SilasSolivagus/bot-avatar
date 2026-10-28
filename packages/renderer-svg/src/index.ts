@@ -1,5 +1,5 @@
-import { clipFrame, outlinePath } from "@botavatar/engine";
-import type { AvatarGeometry, AvatarSpec, ClipFrame } from "@botavatar/engine";
+import { clipFrame, outlinePath, projectEye } from "@botavatar/engine";
+import type { AvatarGeometry, AvatarSpec, ClipFrame, SphereEyeRig } from "@botavatar/engine";
 
 export interface RenderOptions {
   size: number;
@@ -14,9 +14,9 @@ const escapeAttribute = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** FNV-1a over the colour fields: stable across processes, and cheap. */
-function colorDigest(spec: AvatarSpec): string {
+function colorDigest(parts: readonly string[]): string {
   let hash = 2166136261;
-  for (const part of [spec.color.id, spec.color.light, spec.color.dark, spec.color.eye]) {
+  for (const part of parts) {
     for (let index = 0; index < part.length; index++) {
       hash = Math.imul(hash ^ part.charCodeAt(index), 16777619);
     }
@@ -31,9 +31,35 @@ function colorDigest(spec: AvatarSpec): string {
  * one page), and SVG ids are document-global. Without the colour digest the
  * second avatar silently borrows the first one's gradient.
  */
-function gradientId(spec: AvatarSpec): string {
-  const base = `${spec.packId}-${spec.seed}-${colorDigest(spec)}`;
+function avatarId(packId: string, seed: number, digest: string): string {
+  const base = `${packId}-${seed}-${digest}`;
   return `av-${escapeAttribute(base)}`.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function specId(spec: AvatarSpec): string {
+  return avatarId(
+    spec.packId,
+    spec.seed,
+    colorDigest([spec.color.id, spec.color.light, spec.color.dark, spec.color.eye]),
+  );
+}
+
+/**
+ * The eye colour takes part in the digest: two avatars with the same body colour
+ * but different eyes still collide otherwise, and one would borrow the other's
+ * gradient id.
+ */
+function geometryId(geometry: AvatarGeometry): string {
+  return avatarId(
+    geometry.packId,
+    geometry.seed,
+    colorDigest([
+      geometry.ink.bodyId,
+      geometry.ink.body,
+      geometry.ink.bodyHighlight,
+      geometry.ink.eyes,
+    ]),
+  );
 }
 
 function eyeMarkup(spec: AvatarSpec): string {
@@ -59,32 +85,35 @@ function number(value: number): string {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
+/** The fields the working animation reads; `AvatarSpec` and `AvatarGeometry` both carry them. */
+type Animation = Pick<AvatarSpec, "clip" | "durationMs" | "motionAmplitude">;
+
 function keyframes(
   name: string,
-  spec: AvatarSpec,
+  animation: Animation,
   transform: (frame: ClipFrame) => string,
 ): string {
   return `@keyframes ${name}{${FRAME_STEPS.map((progress) => {
-    const frame = clipFrame(spec.clip, progress, spec.motionAmplitude);
+    const frame = clipFrame(animation.clip, progress, animation.motionAmplitude);
     return `${number(progress * 100)}%{transform:${transform(frame)}}`;
   }).join("")}}`;
 }
 
-function workingStyle(spec: AvatarSpec, id: string): string {
+function workingStyle(animation: Animation, id: string): string {
   const body = `${id}-body`;
   const eyes = `${id}-eyes`;
-  const timing = `${spec.durationMs}ms ease-in-out infinite`;
+  const timing = `${animation.durationMs}ms ease-in-out infinite`;
   return (
     `<style>` +
     keyframes(
       body,
-      spec,
+      animation,
       (frame) =>
         `translate(0px, ${number(frame.translateY)}px) scale(${number(frame.scale)}) rotate(${number(frame.rotate)}deg)`,
     ) +
     keyframes(
       eyes,
-      spec,
+      animation,
       (frame) => `translate(${number(frame.eyeOffsetX)}px, 0px) scaleY(${number(frame.eyeScaleY)})`,
     ) +
     // Without `transform-box: fill-box` the origin resolves against the SVG viewport,
@@ -96,19 +125,38 @@ function workingStyle(spec: AvatarSpec, id: string): string {
   );
 }
 
+function gradient(id: string, stops: string): string {
+  return `<linearGradient id="${id}-fill" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient>`;
+}
+
 /** The ink gradient: the pack's material stops when it has any, otherwise light to dark. */
 function fillDefs(spec: AvatarSpec, id: string): string {
   const stops = spec.surface?.stops;
-  const ink = stops?.length
-    ? stops
-        .map(
-          (stop) =>
-            `<stop offset="${stop.offset * 100}%" stop-color="${escapeAttribute(stop.color)}" />`,
-        )
-        .join("")
-    : `<stop offset="0%" stop-color="${escapeAttribute(spec.color.light)}" />` +
-      `<stop offset="100%" stop-color="${escapeAttribute(spec.color.dark)}" />`;
-  return `<linearGradient id="${id}-fill" x1="0" y1="0" x2="1" y2="1">${ink}</linearGradient>`;
+  if (!stops?.length) {
+    return gradient(
+      id,
+      `<stop offset="0%" stop-color="${escapeAttribute(spec.color.light)}" />` +
+        `<stop offset="100%" stop-color="${escapeAttribute(spec.color.dark)}" />`,
+    );
+  }
+  return gradient(
+    id,
+    stops
+      .map(
+        (stop) =>
+          `<stop offset="${stop.offset * 100}%" stop-color="${escapeAttribute(stop.color)}" />`,
+      )
+      .join(""),
+  );
+}
+
+/** A sphere rig has no surface vocabulary yet: two stops straight from the ink. */
+function inkGradient(geometry: AvatarGeometry, id: string): string {
+  return gradient(
+    id,
+    `<stop offset="0%" stop-color="${escapeAttribute(geometry.ink.body)}" />` +
+      `<stop offset="100%" stop-color="${escapeAttribute(geometry.ink.bodyHighlight)}" />`,
+  );
 }
 
 function highlight(spec: AvatarSpec, id: string): { defs: string; shape: string } {
@@ -161,7 +209,7 @@ function grainMarkup(spec: AvatarSpec, id: string): string {
 /** Renders a spec to a standalone SVG string. No DOM, no globals. */
 export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOptions): string {
   const pixels = Math.max(1, Math.round(size));
-  const id = gradientId(spec);
+  const id = specId(spec);
   const working = state === "working";
   const shine = highlight(spec, id);
   const shadowed = spec.surface?.shadow ? ` filter="url(#${id}-shadow)"` : "";
@@ -188,19 +236,66 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
 }
 
 /**
- * Renders geometry through the v1 path. Deliberately folds the geometry back
+ * The sphere rig draws itself: no `AvatarSpec` can express it, since `AvatarSpec.eyes`
+ * only holds rects. The body comes from the outline, the eyes from `projectEye`, and
+ * the gradient from the ink.
+ *
+ * Each eye is a capsule rect centred on the origin — the projection matrix already
+ * carries its translation, its per-axis scale and the eye's own tilt.
+ */
+function renderSphere(
+  geometry: AvatarGeometry,
+  rig: SphereEyeRig,
+  { size, state = "idle" }: RenderOptions,
+): string {
+  const pixels = Math.max(1, Math.round(size));
+  const working = state === "working";
+  const id = geometryId(geometry);
+  const path = outlinePath(geometry.body.outline, {
+    phase: geometry.body.phase,
+    smoothingPasses: geometry.body.smoothingPasses,
+  });
+
+  let capsules = "";
+  for (const index of [0, 1] as const) {
+    const eye = rig.eyes[index];
+    const [a, b, c, d, e, f] = projectEye(rig, geometry.pose, index).matrix.map(number);
+    capsules +=
+      `<rect x="${number(-eye.halfWidth)}" y="${number(-eye.halfHeight)}"` +
+      ` width="${number(2 * eye.halfWidth)}" height="${number(2 * eye.halfHeight)}"` +
+      ` rx="${number(eye.halfWidth)}"` +
+      ` transform="matrix(${a} ${b} ${c} ${d} ${e} ${f})"` +
+      ` fill="${escapeAttribute(geometry.ink.eyes)}" />`;
+  }
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeAttribute(geometry.body.viewBox)}"` +
+    ` width="${pixels}" height="${pixels}" aria-hidden="true">` +
+    (working ? workingStyle(geometry, id) : "") +
+    `<defs>${inkGradient(geometry, id)}</defs>` +
+    `<g${working ? ` class="${id}-body"` : ""}>` +
+    `<path d="${escapeAttribute(path)}" fill="url(#${id}-fill)" />` +
+    // The eyes live inside the body group, so head motion carries them as it does today.
+    `<g${working ? ` class="${id}-eyes"` : ""}>${capsules}</g>` +
+    `</g>` +
+    `</svg>`
+  );
+}
+
+/**
+ * Renders geometry. The legacy `rect` rig deliberately folds the geometry back
  * into an equivalent spec and delegates: this step proves the geometry can
- * express today's avatar, not that the renderer has been rewritten.
+ * express today's avatar, not that the renderer has been rewritten. The sphere
+ * rig has no spec equivalent, so it is drawn directly.
  *
  * The fold reconstructs the path from the body points (geometry is
  * self-sufficient), and takes the palette entry's id and name from the ink so
  * the gradient id matches the v1 render byte for byte.
  */
 export function renderGeometry(geometry: AvatarGeometry, options: RenderOptions): string {
-  if (geometry.rig.kind !== "rect") {
-    throw new Error(`renderGeometry: ${geometry.rig.kind} rig is not implemented yet`);
-  }
   const rig = geometry.rig;
+  if (rig.kind === "sphere") return renderSphere(geometry, rig, options);
+
   const spec: AvatarSpec = {
     packId: geometry.packId,
     packVersion: geometry.packVersion,
