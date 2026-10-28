@@ -28,6 +28,14 @@ const star: ReadonlyArray<Point> = [
   [0, 20], [-28.21, 38.83], [-19.02, 6.18], [-45.65, -14.83], [-11.76, -16.18],
 ];
 
+/** A tall, narrow rectangle: the aesthetic spread asks for more than the cheek has. */
+const narrow: ReadonlyArray<Point> = [
+  [-10, -50],
+  [10, -50],
+  [10, 50],
+  [-10, 50],
+];
+
 /** A cloud: organic-blob's lobed round body, whose radius stays large all round. */
 const cloud: ReadonlyArray<Point> = [
   [-45, -19], [-28, -38], [-4, -46], [22, -41], [42, -25], [49, -2], [42, 23],
@@ -86,19 +94,51 @@ describe("deriveFace", () => {
     }
   });
 
-  it("applies the documented bounds and split formula", () => {
-    for (const outline of [square, squircle, star, cloud]) {
+  it("applies the documented bounds and split rule", () => {
+    for (const outline of [square, squircle, star, cloud, narrow]) {
       const face = deriveFace(outline);
       expect(face.halfHeight).toBeGreaterThanOrEqual(5);
       expect(face.halfHeight).toBeLessThanOrEqual(12);
       expect(face.halfWidth).toBeCloseTo(face.halfHeight * 0.44, 9);
-      const expectedSplit = Math.max(
+      // The aesthetic spread, capped by the room the narrowest cheek leaves for the
+      // pair plus its widths and the 2-unit margin.
+      const spread = Math.max(
         4,
         (Math.asin(Math.min(0.9, (2.4 * face.halfWidth) / face.rMin)) * 180) / Math.PI,
       );
-      expect(face.splitDeg).toBeCloseTo(expectedSplit, 9);
+      const room =
+        (Math.asin(Math.max(0, Math.min(0.85, (face.rMin - face.halfWidth - 2) / 44))) * 180) /
+        Math.PI;
+      expect(face.splitDeg).toBeCloseTo(Math.max(4, Math.min(spread, room)), 9);
       expect(face.dy).toBeCloseTo(-0.14 * face.rMin, 9);
     }
+  });
+
+  it("keeps the cloud's split under 20° and inside the room", () => {
+    const face = deriveFace(cloud);
+    expect(face.splitDeg).toBeLessThan(20);
+    expect(face.splitDeg).toBeGreaterThan(4);
+    // The room is an upper bound, not a target: the cloud's aesthetic spread already
+    // sits inside it, so the cap does not widen the face.
+    const roomSin = Math.min(0.85, (face.rMin - face.halfWidth - 2) / 44);
+    const roomDeg = (Math.asin(roomSin) * 180) / Math.PI;
+    expect(face.splitDeg).toBeLessThanOrEqual(roomDeg + 1e-9);
+  });
+
+  it("tightens a narrow face to the room instead of the aesthetic spread", () => {
+    const face = deriveFace(narrow);
+    const spread = (Math.asin(Math.min(0.9, (2.4 * face.halfWidth) / face.rMin)) * 180) / Math.PI;
+    const room =
+      (Math.asin(Math.min(0.85, (face.rMin - face.halfWidth - 2) / 44)) * 180) / Math.PI;
+    expect(room).toBeLessThan(spread);
+    expect(face.splitDeg).toBeCloseTo(room, 9);
+  });
+
+  it("uses the sphere radius in the room bound", () => {
+    const at44 = deriveFace(narrow, { sphereRadius: 44 });
+    const at22 = deriveFace(narrow, { sphereRadius: 22 });
+    // A smaller sphere reaches the same chord at a larger angle.
+    expect(at22.splitDeg).toBeGreaterThan(at44.splitDeg);
   });
 
   it("honours the style ratios and the width aspect", () => {

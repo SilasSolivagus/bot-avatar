@@ -55,7 +55,7 @@ describe("buildGeometry", () => {
   it("derives the sphere eyes from the outline, ignoring the pack's declared values", () => {
     const geometry = buildGeometry(spherePack, "alice");
     if (geometry.rig.kind !== "sphere") throw new Error("unreachable");
-    const face = deriveFace(geometry.body.outline);
+    const face = deriveFace(geometry.body.outline, { sphereRadius: geometry.rig.sphereRadius });
     expect(geometry.rig.anchorY).toBe(face.dy);
     expect(geometry.rig.eyes[0]).toMatchObject({
       lateralDeg: face.splitDeg,

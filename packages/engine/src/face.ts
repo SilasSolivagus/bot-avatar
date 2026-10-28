@@ -13,6 +13,8 @@ export interface FaceStyle {
   centreOffsetRatio?: number;
   /** 眼睛与轮廓的最小留白（viewBox 单位） */
   margin?: number;
+  /** 眼睛所在球的半径（viewBox 单位）；缺省 44，`buildGeometry` 会传 rig 的值 */
+  sphereRadius?: number;
 }
 
 /** The face parameters a body outline implies. */
@@ -37,6 +39,10 @@ const HALF_HEIGHT_MAX = 12;
 const SPLIT_FACTOR = 2.4;
 const SPLIT_SIN_MAX = 0.9;
 const SPLIT_DEG_MIN = 4;
+/** 眼睛在球面上的位置上限：再往外就只剩球的边缘，胶囊会被压成一条线。 */
+const SPLIT_ROOM_SIN_MAX = 0.85;
+/** 独立调用 `deriveFace` 时的默认球半径；球面 rig 会传入自己的值。 */
+const DEFAULT_SPHERE_RADIUS = 44;
 const SCAN_DEG = 50;
 const SCAN_STEP_DEG = 2;
 
@@ -104,8 +110,26 @@ export function deriveFace(outline: ReadonlyArray<Point>, style?: FaceStyle): Fa
     Math.min(HALF_HEIGHT_MAX, rMin - margin),
   );
   const halfWidth = halfHeight * widthRatio;
-  const splitSin = rMin > 0 ? clamp((SPLIT_FACTOR * halfWidth) / rMin, 0, SPLIT_SIN_MAX) : 0;
-  const splitDeg = Math.max(SPLIT_DEG_MIN, (Math.asin(splitSin) * 180) / Math.PI);
+  const sphereRadius =
+    style?.sphereRadius !== undefined &&
+    Number.isFinite(style.sphereRadius) &&
+    style.sphereRadius > 0
+      ? style.sphereRadius
+      : DEFAULT_SPHERE_RADIUS;
+
+  // The aesthetic spread: the pair opens just enough that the inner edges almost
+  // touch. This is what makes a face read, and it does not scale with the outline.
+  const spreadSin = rMin > 0 ? clamp((SPLIT_FACTOR * halfWidth) / rMin, 0, SPLIT_SIN_MAX) : 0;
+  const spreadDeg = (Math.asin(spreadSin) * 180) / Math.PI;
+
+  // The room is the hard bound: at `splitDeg` the eye centre sits `R·sin(split)` from
+  // the centre, and its outer edge plus the margin must stay inside `rMin`, the
+  // narrowest radius of the frontal face. Taking `min` keeps the aesthetic spread but
+  // makes "inside by construction" true even on a narrow cheek, where the spread
+  // would otherwise ask for a place the outline does not have.
+  const roomSin = clamp((rMin - halfWidth - margin) / sphereRadius, 0, SPLIT_ROOM_SIN_MAX);
+  const roomDeg = (Math.asin(roomSin) * 180) / Math.PI;
+  const splitDeg = Math.max(SPLIT_DEG_MIN, Math.min(spreadDeg, roomDeg));
 
   return {
     rMin,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec, buildGeometry } from "@botavatar/engine";
+import { buildAvatarSpec, buildGeometry, projectEye, radiusAtAngle } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "@botavatar/svg";
 import { clay } from "../src/packs/clay.js";
@@ -261,6 +261,57 @@ describe("pointer follow: the head and the eyes share one gaze", () => {
       expect(a[index]!.height).toBeCloseTo(b[index]!.height, 6);
       expect(angleDelta(a[index]!.angle, b[index]!.angle)).toBeCloseTo(0, 5);
     }
+  });
+
+  it("keeps every capsule inside the silhouette at the four corners", () => {
+    const geometry = buildGeometry(orb, "wall-0-0");
+    for (const [yaw, pitch] of [
+      [-44, 25],
+      [45, 25],
+      [-44, -25],
+      [45, -25],
+    ] as const) {
+      const drawn = capsules(
+        renderGeometry(poseGeometry(geometry, { gaze: { yaw, pitch }, lidOpen: 1 }), {
+          size: 160,
+        }),
+      );
+      expect(drawn).toHaveLength(2);
+      for (const capsule of drawn) {
+        const angle = Math.atan2(capsule.cy, capsule.cx);
+        const outer =
+          Math.hypot(capsule.cx, capsule.cy) + Math.max(capsule.width, capsule.height) / 2;
+        // The capsule's bounding circle must stay inside the outline at its own
+        // angle. 0.5 absorbs the emitted 3-decimal rounding.
+        expect(outer).toBeLessThanOrEqual(radiusAtAngle(geometry.body.outline, angle) + 0.5);
+      }
+    }
+  });
+
+  it("pulls in the eye that would escape the cloud at the top-left", () => {
+    const geometry = buildGeometry(orb, "wall-0-0");
+    if (geometry.rig.kind !== "sphere") throw new Error("orb is a sphere pack");
+    const gaze = { yaw: -44, pitch: 25 };
+    const eyePose = {
+      gaze: {
+        yaw: gaze.yaw * (1 - geometry.rig.bodyCoupling),
+        pitch: gaze.pitch * (1 - (geometry.rig.bodyPitchFollow ?? 0)),
+      },
+      lidOpen: 1,
+    };
+    const raw = projectEye(geometry.rig, eyePose, 0);
+    const anchor = geometry.rig.anchorY ?? 0;
+    // Where the far capsule would sit with no fit: its centre plus the face anchor.
+    const rawDistance = Math.hypot(raw.matrix[4], raw.matrix[5] + anchor);
+    const drawn = capsules(
+      renderGeometry(poseGeometry(geometry, { gaze, lidOpen: 1 }), { size: 160 }),
+    )[0]!;
+    const drawnDistance = Math.hypot(drawn.cx, drawn.cy);
+    expect(drawnDistance).toBeLessThan(rawDistance);
+    // And it is now at the room, not merely closer.
+    const radius = radiusAtAngle(geometry.body.outline, Math.atan2(drawn.cy, drawn.cx));
+    const room = radius - Math.max(drawn.width, drawn.height) / 2 - 2.5;
+    expect(drawnDistance).toBeCloseTo(room, 1);
   });
 
   it("returns to the rest pose when the pointer leaves", () => {

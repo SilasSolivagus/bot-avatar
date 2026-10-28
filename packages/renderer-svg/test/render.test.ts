@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec, buildGeometry, projectEye, toGeometry } from "@botavatar/engine";
+import {
+  buildAvatarSpec,
+  buildGeometry,
+  projectEye,
+  radiusAtAngle,
+  toGeometry,
+} from "@botavatar/engine";
 import type { SphereEyeRig, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
-import { renderGeometry, renderSvg } from "../src/index.js";
+import { fitEyeToOutline, renderGeometry, renderSvg } from "../src/index.js";
 
 const spec = buildAvatarSpec(organicBlob, "bot_123");
 
@@ -554,5 +560,56 @@ describe("sphere rig", () => {
     expect(renderGeometry(buildGeometry(organicBlob, "alice"), { size: 96 })).toBe(
       renderSvg(rectSpec, { size: 96 }),
     );
+  });
+});
+
+
+describe("fitEyeToOutline", () => {
+  /** A rectangle 40 wide and 80 tall: the narrowest frontal radius is 20. */
+  const body: ReadonlyArray<readonly [number, number]> = [
+    [-20, -40],
+    [20, -40],
+    [20, 40],
+    [-20, 40],
+  ];
+
+  it("leaves an eye that already fits exactly where the projection put it", () => {
+    expect(fitEyeToOutline(body, 6, 0, 4, 10)).toEqual({ x: 6, y: 0, clamped: false });
+  });
+
+  it("pulls an escaping eye back to the room, along its own direction", () => {
+    const halfWidth = 4;
+    const halfLength = 10;
+    const fitted = fitEyeToOutline(body, 30, 0, halfWidth, halfLength);
+    expect(fitted.clamped).toBe(true);
+    const distance = Math.hypot(fitted.x, fitted.y);
+    // The room is the silhouette radius at that angle, less the capsule's bounding
+    // half-extent and the 2.5-unit margin.
+    expect(distance).toBeCloseTo(radiusAtAngle(body, 0) - (10 + 2.5), 6);
+    expect(distance).toBeLessThan(30);
+    expect(Math.atan2(fitted.y, fitted.x)).toBeCloseTo(0, 9);
+  });
+
+  it("keeps the outermost point inside the outline", () => {
+    const outline: ReadonlyArray<readonly [number, number]> = [
+      [-46, -46],
+      [46, -46],
+      [46, 46],
+      [-46, 46],
+    ];
+    const fitted = fitEyeToOutline(outline, 40, -40, 5, 12);
+    const outer = Math.hypot(fitted.x, fitted.y) + 12;
+    expect(outer).toBeLessThanOrEqual(radiusAtAngle(outline, Math.atan2(fitted.y, fitted.x)));
+  });
+
+  it("parks an eye at the centre when the outline has no room at all", () => {
+    const diamond: ReadonlyArray<readonly [number, number]> = [
+      [-5, 0],
+      [0, 5],
+      [5, 0],
+      [0, -5],
+    ];
+    const fitted = fitEyeToOutline(diamond, 10, 0, 3, 3);
+    expect(fitted).toEqual({ x: 0, y: 0, clamped: true });
   });
 });

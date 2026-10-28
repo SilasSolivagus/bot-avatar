@@ -1,5 +1,11 @@
-import { clipFrame, outlinePath, projectEye } from "@botavatar/engine";
-import type { AvatarGeometry, AvatarSpec, ClipFrame, SphereEyeRig } from "@botavatar/engine";
+import { clipFrame, outlinePath, projectEye, radiusAtAngle } from "@botavatar/engine";
+import type {
+  AvatarGeometry,
+  AvatarSpec,
+  ClipFrame,
+  Point,
+  SphereEyeRig,
+} from "@botavatar/engine";
 
 export interface RenderOptions {
   size: number;
@@ -86,6 +92,47 @@ function number(value: number): string {
 }
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+/** Clearance between the outermost point of a capsule and the body outline, in viewBox units. */
+export const EYE_FIT_MARGIN = 2.5;
+
+export interface FittedEye {
+  x: number;
+  y: number;
+  /** True when the projection would have left the silhouette and was pulled in. */
+  clamped: boolean;
+}
+
+/**
+ * Pulls a projected eye's centre towards the origin until the capsule's outermost
+ * point fits inside the body outline along its own direction. The eyes sit on the
+ * head's sphere, but the body is not a circle: when the gaze turns, the far eye can
+ * land where the silhouette is narrow and the mask would slice the capsule.
+ *
+ * The capsule is bounded by the circle around its centre with radius
+ * `max(halfWidth, halfLength)`, so the fit holds for every rotation of the capsule.
+ * The caller folds the face anchor (`anchorY`) into `y` before calling: the fit has
+ * to see the point that is actually drawn, or the anchor would push the capsule back
+ * outside after the clamp.
+ */
+export function fitEyeToOutline(
+  outline: ReadonlyArray<Point>,
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfLength: number,
+  margin = EYE_FIT_MARGIN,
+): FittedEye {
+  const distance = Math.hypot(x, y);
+  if (distance === 0) return { x, y, clamped: false };
+  const room =
+    radiusAtAngle(outline, Math.atan2(y, x)) - (Math.max(halfWidth, halfLength) + margin);
+  if (distance <= room) return { x, y, clamped: false };
+  // A room of zero or less means the outline has no place for this eye at all; the
+  // capsule then sits at the centre rather than outside the body.
+  const scale = Math.max(0, room) / distance;
+  return { x: x * scale, y: y * scale, clamped: true };
+}
 
 /** The fields the working animation reads; `AvatarSpec` and `AvatarGeometry` both carry them. */
 type Animation = Pick<AvatarSpec, "clip" | "durationMs" | "motionAmplitude">;
@@ -305,9 +352,19 @@ function renderSphere(
     // equals `rx` exactly in the emitted markup, which is the capsule invariant.
     const halfWidth = Number(Math.hypot(a, b).toFixed(3));
     const halfLength = Number(Math.hypot(c, d).toFixed(3));
-    const cx = number(e);
-    // The face anchor moves the whole eye pair, both when resting and when turning.
-    const cy = number(f + anchorY);
+    // The fit is where the pose is known: the same rig at rest cannot know how far a
+    // turned gaze will push an eye towards a narrow cheek. The anchor is folded in
+    // first because it is part of where the capsule is actually drawn; fitting before
+    // adding it would let the anchor push the capsule back out by `|anchorY|`.
+    const fitted = fitEyeToOutline(
+      geometry.body.outline,
+      e,
+      f + anchorY,
+      halfWidth,
+      halfLength,
+    );
+    const cx = number(fitted.x);
+    const cy = number(fitted.y);
     const opacity = alpha < 1 ? ` opacity="${alpha.toFixed(3)}"` : "";
     capsules +=
       `<g transform="translate(${cx},${cy}) rotate(${number(angle)})">` +
