@@ -1,4 +1,12 @@
 import type { Point } from "./geometry.js";
+import { assertRadii, isRadiiProfile, radiusAtRadii } from "./profile.js";
+
+/**
+ * Either body representation: a polygon outline or a 64-sample radial profile.
+ * Runtime detection is structural — a profile's first element is a number, a
+ * polygon's is a point.
+ */
+export type ShapeSamples = ReadonlyArray<Point> | readonly number[];
 
 /**
  * The knobs a pack may use to adjust the derived face. Every value is a ratio or a
@@ -58,7 +66,10 @@ const clamp = (value: number, min: number, max: number): number =>
  * cross more than once. A degenerate outline (or an origin outside the polygon)
  * returns 0 rather than NaN, so callers can treat "no outline here" as no radius.
  */
-export function radiusAtAngle(outline: ReadonlyArray<Point>, angleRad: number): number {
+export function radiusAtAngle(shape: ShapeSamples, angleRad: number): number {
+  // A profile answers from its samples in O(1); no ray casting.
+  if (isRadiiProfile(shape)) return radiusAtRadii(shape, angleRad);
+  const outline = shape;
   const dx = Math.cos(angleRad);
   const dy = Math.sin(angleRad);
   let nearest = Infinity;
@@ -86,7 +97,7 @@ export function radiusAtAngle(outline: ReadonlyArray<Point>, angleRad: number): 
  * pair just enough that their inner edges almost touch. A shape with a tight cheek
  * (a star) therefore gets small, close eyes instead of eyes that spill out.
  */
-export function deriveFace(outline: ReadonlyArray<Point>, style?: FaceStyle): Face {
+export function deriveFace(shape: ShapeSamples, style?: FaceStyle): Face {
   const heightRatio = style?.eyeHeightRatio ?? EYE_HEIGHT_RATIO;
   const aspect = style?.eyeAspect;
   const widthRatio =
@@ -95,9 +106,23 @@ export function deriveFace(outline: ReadonlyArray<Point>, style?: FaceStyle): Fa
   const margin = style?.margin ?? MARGIN;
 
   let rMin = Infinity;
-  for (let degrees = -SCAN_DEG; degrees <= SCAN_DEG; degrees += SCAN_STEP_DEG) {
-    const radius = radiusAtAngle(outline, (degrees * Math.PI) / 180);
-    if (radius > 0 && radius < rMin) rMin = radius;
+  if (isRadiiProfile(shape)) {
+    // Straight from the samples: every index whose angle is inside the ±50° cone. With
+    // the fixed 64-sample wheel that is indices 56..63 and 0..8 — the profile's own
+    // frontal minimum, no interpolation and no ray casting.
+    assertRadii(shape, "deriveFace radii");
+    for (let index = 0; index < shape.length; index++) {
+      const angle = (index / shape.length) * Math.PI * 2;
+      const distanceToFront = Math.min(angle, Math.PI * 2 - angle);
+      if (distanceToFront > (SCAN_DEG * Math.PI) / 180 + 1e-9) continue;
+      const radius = shape[index]!;
+      if (radius > 0 && radius < rMin) rMin = radius;
+    }
+  } else {
+    for (let degrees = -SCAN_DEG; degrees <= SCAN_DEG; degrees += SCAN_STEP_DEG) {
+      const radius = radiusAtAngle(shape, (degrees * Math.PI) / 180);
+      if (radius > 0 && radius < rMin) rMin = radius;
+    }
   }
   if (!Number.isFinite(rMin)) rMin = 0;
 

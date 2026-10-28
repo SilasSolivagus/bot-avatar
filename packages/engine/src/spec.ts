@@ -2,6 +2,7 @@ import { colorIndex } from "./color.js";
 import type { ClipName } from "./clips.js";
 import { avatarFamily, avatarLook } from "./family.js";
 import { outlinePath, phaseForSeed } from "./outline.js";
+import { assertRadii, radiiToPath } from "./profile.js";
 import { avatarSeed } from "./seed.js";
 
 export interface PaletteColor {
@@ -15,8 +16,19 @@ export interface PaletteColor {
 }
 
 export interface ShapeFamily {
-  /** 120x120 coordinate space, origin at the centre; a closed polygon. */
+  /**
+   * 120x120 coordinate space, origin at the centre; a closed polygon.
+   *
+   * Exactly one of `outline` / `radii` is present at runtime. The type still declares
+   * this one required because the legacy consumers (the service's conformance sweep and
+   * the gallery's pack tests) dereference it without a guard, and this step must not
+   * touch `apps/`; a profile family therefore declares itself through
+   * {@link radiiShape}, the same boundary-cast pattern `build-geometry.ts` uses for the
+   * v1 eye types. `parsePack` will enforce the either/or rule at startup.
+   */
   outline: ReadonlyArray<readonly [number, number]>;
+  /** 64 equal-angle radii, the shape model the reference implementation uses. */
+  radii?: readonly number[];
   /** Assignment never targets a reserved family; the hash may still land on it. */
   reserved?: boolean;
   /** Visually equivalent families share a look. Defaults to the family index. */
@@ -82,15 +94,32 @@ export interface AvatarSpec {
   viewBox: string;
 }
 
+/**
+ * Declares a `radii` shape family.
+ *
+ * A profile carries no polygon, but {@link ShapeFamily.outline} is still typed as one
+ * while the legacy consumers migrate. This is the single boundary cast for the new
+ * representation: the returned family has `radii` and no `outline` at runtime, which is
+ * the contract `parsePack` validates.
+ */
+export function radiiShape(radii: readonly number[]): ShapeFamily {
+  assertRadii(radii, "radiiShape");
+  return { radii } as unknown as ShapeFamily;
+}
+
 /** Everything a renderer needs, derived from one identity and one pack. */
 export function buildAvatarSpec(pack: StylePack, identity: string): AvatarSpec {
   const seed = avatarSeed(identity);
   const family = avatarFamily(seed, pack.shapes);
   const shape = pack.shapes[family]!;
-  const path = outlinePath(shape.outline, {
-    phase: phaseForSeed(seed),
-    smoothingPasses: shape.smoothingPasses,
-  });
+  // A radii family draws its sample points directly; an outline family keeps the exact
+  // v1 pipeline (affine phase distortion, then Chaikin, then Catmull-Rom).
+  const path = shape.radii
+    ? radiiToPath(shape.radii)
+    : outlinePath(shape.outline, {
+        phase: phaseForSeed(seed),
+        smoothingPasses: shape.smoothingPasses,
+      });
   const color = pack.palette[colorIndex(identity, pack.palette.length)]!;
   const durationMs = pack.motion.durationMsByFamily[family] ?? pack.motion.durationMsByFamily[0]!;
   const clip = pack.motion.clipByFamily[family] ?? "breathe";

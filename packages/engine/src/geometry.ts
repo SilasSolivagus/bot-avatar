@@ -5,7 +5,13 @@ export type Point = readonly [number, number];
 
 /** 身体：点集 + 变换 + 曲线类型。渲染器据此生成路径。 */
 export interface Body {
+  /** 多边形视图；`radii` 剖面也会派生一份，供尚未切换的消费者使用。 */
   outline: ReadonlyArray<Point>;
+  /**
+   * 64 个等角度半径——形状的权威表示。存在时 `outline` 是 `radiiToPoints` 派生出来的
+   * 多边形视图，渲染器应优先走 `radiiToPath` / `radiusAtRadii`。
+   */
+  radii?: readonly number[];
   /** 由身份哈希决定的形变相位（弧度） */
   phase: number;
   smoothingPasses: number;

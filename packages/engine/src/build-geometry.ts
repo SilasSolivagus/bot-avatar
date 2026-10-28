@@ -35,7 +35,11 @@ export function buildGeometry(pack: StylePack, identity: string): AvatarGeometry
   // declared in the pack's eye block (`lateralDeg`, `halfWidth`, `halfHeight`,
   // `tiltDeg`) are therefore ignored for sphere rigs — a pack only chooses the
   // sphere radius, the depth band and the coupling.
-  const face = deriveFace(geometry.body.outline, { sphereRadius: rig.sphereRadius });
+  // The face comes from whichever representation the family carries: a radii profile
+  // reads its ±50° minimum straight from the samples, an outline takes the ray/polygon
+  // measure — the same value, without going through the derived polygon.
+  const shape = pack.shapes[geometry.family]!;
+  const face = deriveFace(shape.radii ?? shape.outline, { sphereRadius: rig.sphereRadius });
   const restTiltDeg = Number.isFinite(rig.restTiltDeg) ? rig.restTiltDeg! : 0;
   const bodyPitchFollow = Number.isFinite(rig.bodyPitchFollow) ? rig.bodyPitchFollow! : 0;
 

@@ -8,6 +8,31 @@ export function phaseForSeed(seed: number): number {
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 /**
+ * A closed Catmull-Rom curve through `points`, as SVG cubics, at the upstream tension
+ * of 1/6. Every emitted number is rounded to two decimals.
+ *
+ * This is the curve construction both body representations share: `outlinePath` feeds
+ * it the smoothed polygon, `radiiToPath` feeds it the 64 profile points directly.
+ */
+export function closedCurvePath(points: ReadonlyArray<{ x: number; y: number }>): string {
+  const count = points.length;
+  if (count === 0) throw new RangeError("closedCurvePath needs at least one point");
+  const first = points[0]!;
+  let path = `M${round(first.x)} ${round(first.y)}`;
+  for (let index = 0; index < count; index++) {
+    const before = points[(index - 1 + count) % count]!;
+    const current = points[index]!;
+    const next = points[(index + 1) % count]!;
+    const after = points[(index + 2) % count]!;
+    path +=
+      `C${round(current.x + (next.x - before.x) / 6)} ${round(current.y + (next.y - before.y) / 6)}` +
+      ` ${round(next.x - (after.x - current.x) / 6)} ${round(next.y - (after.y - current.y) / 6)}` +
+      ` ${round(next.x)} ${round(next.y)}`;
+  }
+  return `${path}Z`;
+}
+
+/**
  * Turns a polygon into an SVG path: affine distortion from the phase, then
  * Chaikin smoothing, then Catmull-Rom control points.
  *
@@ -34,18 +59,5 @@ export function outlinePath(
     });
   }
 
-  const count = points.length;
-  const first = points[0]!;
-  let path = `M${round(first.x)} ${round(first.y)}`;
-  for (let index = 0; index < count; index++) {
-    const before = points[(index - 1 + count) % count]!;
-    const current = points[index]!;
-    const next = points[(index + 1) % count]!;
-    const after = points[(index + 2) % count]!;
-    path +=
-      `C${round(current.x + (next.x - before.x) / 6)} ${round(current.y + (next.y - before.y) / 6)}` +
-      ` ${round(next.x - (after.x - current.x) / 6)} ${round(next.y - (after.y - current.y) / 6)}` +
-      ` ${round(next.x)} ${round(next.y)}`;
-  }
-  return `${path}Z`;
+  return closedCurvePath(points);
 }

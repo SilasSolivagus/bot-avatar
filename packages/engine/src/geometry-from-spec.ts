@@ -1,10 +1,14 @@
 import type { StylePack, AvatarSpec } from "./spec.js";
 import type { AvatarGeometry } from "./geometry.js";
 import { phaseForSeed } from "./outline.js";
+import { radiiToPoints } from "./profile.js";
 
 /** 把 v1 的 spec 如实描述成几何：不发明新语义，只换一种表达。 */
 export function toGeometry(pack: StylePack, spec: AvatarSpec): AvatarGeometry {
   const shape = pack.shapes[spec.family]!;
+  // Both representations reach the geometry: a radii family carries its profile and a
+  // derived polygon view, an outline family carries the polygon as before.
+  const outline = shape.radii ? radiiToPoints(shape.radii) : shape.outline;
   return {
     packId: spec.packId,
     packVersion: spec.packVersion,
@@ -13,7 +17,8 @@ export function toGeometry(pack: StylePack, spec: AvatarSpec): AvatarGeometry {
     family: spec.family,
     look: spec.look,
     body: {
-      outline: shape.outline,
+      outline,
+      ...(shape.radii ? { radii: shape.radii } : {}),
       phase: phaseForSeed(spec.seed),
       smoothingPasses: shape.smoothingPasses ?? 2,
       curve: "smooth",

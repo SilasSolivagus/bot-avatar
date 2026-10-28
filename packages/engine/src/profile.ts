@@ -9,6 +9,9 @@
  * Every generator is a pure function of its arguments: no clock, no I/O, no randomness.
  */
 
+import type { Point } from "./geometry.js";
+import { closedCurvePath } from "./outline.js";
+
 /** Radial samples per silhouette, shared by every shape. */
 export const PROFILE_SAMPLES = 64;
 
@@ -390,4 +393,74 @@ export function radiiToPoints(radii: readonly number[]): Array<[number, number]>
     const angle = index * step;
     return [radius * Math.cos(angle), radius * Math.sin(angle)] as [number, number];
   });
+}
+
+/**
+ * Validates a shape's radial profile: exactly {@link PROFILE_SAMPLES} samples, every one
+ * a positive finite number, and a finite sum.
+ *
+ * The shape model says exactly one of `outline` / `radii` is present on a family, and
+ * `parsePack` will enforce that at startup. This check is the inner contract every
+ * consumer of `radii` can rely on: a malformed profile fails where it is used rather
+ * than turning into a NaN path.
+ */
+export function assertRadii(radii: readonly number[], label = "radii"): void {
+  if (radii.length !== PROFILE_SAMPLES) {
+    throw new RangeError(`${label} must have ${PROFILE_SAMPLES} samples, got ${radii.length}`);
+  }
+  let sum = 0;
+  for (let index = 0; index < radii.length; index++) {
+    const radius = radii[index]!;
+    if (!Number.isFinite(radius) || radius <= 0) {
+      throw new RangeError(
+        `${label}[${index}] must be a positive finite number, got ${String(radius)}`,
+      );
+    }
+    sum += radius;
+  }
+  if (!Number.isFinite(sum)) {
+    throw new RangeError(`${label} must have a finite sum`);
+  }
+}
+
+/** Is this shape representation a radial profile rather than a polygon? */
+export function isRadiiProfile(
+  shape: ReadonlyArray<Point> | readonly number[],
+): shape is readonly number[] {
+  return shape.length > 0 && typeof shape[0] === "number";
+}
+
+/**
+ * The radius at `angleRad`, interpolated between the two adjacent samples.
+ *
+ * O(1): one index computation and one lerp, no ray casting. Angles wrap, so a negative
+ * angle or one beyond a full turn reads the same profile; on a sample angle the stored
+ * sample is returned unchanged.
+ */
+export function radiusAtRadii(radii: readonly number[], angleRad: number): number {
+  assertRadii(radii, "radii");
+  if (!Number.isFinite(angleRad)) {
+    throw new RangeError(`radiusAtRadii angle must be finite, got ${String(angleRad)}`);
+  }
+  const count = radii.length;
+  const position = ((angleRad / TWO_PI) * count) % count;
+  const wrapped = position < 0 ? position + count : position;
+  const index = Math.floor(wrapped);
+  const fraction = wrapped - index;
+  const current = radii[index]!;
+  if (fraction === 0) return current;
+  return current + (radii[(index + 1) % count]! - current) * fraction;
+}
+
+/**
+ * The SVG path for a radial profile: the same closed Catmull-Rom construction the
+ * polygon path uses, fed the 64 sample points directly.
+ *
+ * No Chaikin smoothing and no per-identity affine distortion: the samples are already
+ * the shape (`docs/design` §1), and a profile's variation is its own, not the v1 phase
+ * distortion.
+ */
+export function radiiToPath(radii: readonly number[]): string {
+  assertRadii(radii, "radiiToPath");
+  return closedCurvePath(radiiToPoints(radii).map(([x, y]) => ({ x, y })));
 }
