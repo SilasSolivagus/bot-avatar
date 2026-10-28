@@ -157,6 +157,8 @@ renderSvg(spec: AvatarSpec, options: { size: number; state?: "idle" | "working" 
 
 A pack is data: shapes, a palette, eye geometry, durations, and the material the renderer may use. Writing one does not touch the engine.
 
+A pack does not specify eye size: for a sphere pack the face is derived from the body outline (`deriveFace`), so the pack only chooses the sphere radius, the depth band and the coupling.
+
 ```ts
 import type { StylePack } from "@botavatar/engine";
 
