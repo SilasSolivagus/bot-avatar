@@ -1,3 +1,5 @@
+import type { ClipName } from "./clips.js";
+
 export type Point = readonly [number, number];
 
 /** 身体：点集 + 变换 + 曲线类型。渲染器据此生成路径。 */
@@ -71,6 +73,11 @@ export interface AvatarGeometry {
   /** 循环时长，毫秒；v1 的 durationMs */
   durationMs: number;
   motionAmplitude: number;
+  /**
+   * 该 family 播放的循环，v1 的 clip。渲染器的工作态关键帧只由它决定，
+   * 而它无法从其它几何字段推出，所以必须随几何一起带过来。
+   */
+  clip: ClipName;
   /** v1 的可见性：本步不填，留给后续步骤 */
   accessories?: ReadonlyArray<unknown>;
 }
