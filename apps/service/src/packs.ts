@@ -128,9 +128,94 @@ function assertPalette(value: unknown, origin: string): void {
   });
 }
 
+/** The band an eye's aspect must *not* fall in, or a tilt would be invisible. */
+const TILT_ASPECT_BANDS = {
+  steep: [0.6, 1.7],
+  shallow: [0.8, 1.25],
+} as const;
+
+/**
+ * A tilt only reads on an eye that is not round. Above 20° the eye may be only
+ * moderately elongated; below it the capsule must be clearly longer than wide,
+ * which is why the narrow band is the stricter one.
+ */
+function assertTiltVisible(
+  tiltDeg: number,
+  halfWidth: number,
+  halfHeight: number,
+  origin: string,
+  path: string,
+): void {
+  const aspect = halfWidth / halfHeight;
+  const [low, high] = Math.abs(tiltDeg) >= 20 ? TILT_ASPECT_BANDS.steep : TILT_ASPECT_BANDS.shallow;
+  if (aspect >= low && aspect <= high) {
+    fail(
+      origin,
+      path,
+      `must be on a non-circular eye: aspect ${aspect} lies within [${low}, ${high}] at ${tiltDeg}°`,
+    );
+  }
+}
+
+/**
+ * Sphere eyes are two capsules bound to a radius, not a list of rects. The
+ * numeric contract is validated here; the geometry the renderer actually draws
+ * is derived from the body outline by `buildGeometry`, so `halfWidth`/`halfHeight`
+ * of 0/0 is the documented "derive it" placeholder and skips the size and tilt
+ * rules. Anything else must describe a real capsule.
+ */
+function assertSphereEyes(eyes: Record<string, unknown>, origin: string): void {
+  const radius = expectFiniteNumber(eyes.sphereRadius, origin, "eyes.sphereRadius");
+  if (radius <= 0) fail(origin, "eyes.sphereRadius", "must be a positive number");
+
+  const entries = expectArray(eyes.eyes, origin, "eyes.eyes");
+  if (entries.length !== 2) {
+    fail(origin, "eyes.eyes", `must have exactly 2 entries, got ${entries.length}`);
+  }
+  entries.forEach((eye, index) => {
+    const path = `eyes.eyes[${index}]`;
+    const entry = expectObject(eye, origin, path);
+    for (const field of ["lateralDeg", "verticalDeg", "halfWidth", "halfHeight", "tiltDeg"] as const) {
+      expectFiniteNumber(entry[field], origin, `${path}.${field}`);
+    }
+    const halfWidth = entry.halfWidth as number;
+    const halfHeight = entry.halfHeight as number;
+    if (halfWidth === 0 && halfHeight === 0) return;
+    if (halfWidth <= 0) fail(origin, `${path}.halfWidth`, "must be a positive number");
+    if (halfHeight <= 0) fail(origin, `${path}.halfHeight`, "must be a positive number");
+    assertTiltVisible(entry.tiltDeg as number, halfWidth, halfHeight, origin, `${path}.tiltDeg`);
+  });
+
+  const cull = expectFiniteNumber(eyes.cullAtDepth, origin, "eyes.cullAtDepth");
+  const fade = expectFiniteNumber(eyes.fadeFromDepth, origin, "eyes.fadeFromDepth");
+  if (cull < 0 || cull > 1) fail(origin, "eyes.cullAtDepth", "must be within [0, 1]");
+  if (fade < 0 || fade > 1) fail(origin, "eyes.fadeFromDepth", "must be within [0, 1]");
+  if (cull >= fade) fail(origin, "eyes.cullAtDepth", "must be less than eyes.fadeFromDepth");
+
+  // Optional: only validated when the pack actually declares them.
+  for (const field of ["bodyCoupling", "bodyPitchFollow"] as const) {
+    if (eyes[field] === undefined) continue;
+    const value = expectFiniteNumber(eyes[field], origin, `eyes.${field}`);
+    if (value < 0 || value > 1) fail(origin, `eyes.${field}`, "must be within [0, 1]");
+  }
+  for (const field of ["anchorY", "restTiltDeg"] as const) {
+    if (eyes[field] === undefined) continue;
+    expectFiniteNumber(eyes[field], origin, `eyes.${field}`);
+  }
+}
+
 /** An eye is one valid discriminator plus exactly that variant's finite geometry fields. */
 function assertEyes(value: unknown, origin: string): void {
   const eyes = expectObject(value, origin, "eyes");
+  // v1 packs omit `kind`; an explicit discriminator must still be one of the two.
+  const kind = eyes.kind;
+  if (kind !== undefined && kind !== "rect" && kind !== "sphere") {
+    fail(origin, "eyes.kind", 'must be "rect" or "sphere"');
+  }
+  if (kind === "sphere") {
+    assertSphereEyes(eyes, origin);
+    return;
+  }
   const entries = expectArray(eyes.eyes, origin, "eyes.eyes");
   if (entries.length === 0) fail(origin, "eyes.eyes", "must be a non-empty array");
   entries.forEach((eye, index) => {

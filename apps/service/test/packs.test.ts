@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { builtinPacks, loadPack, PackError, parsePack } from "../src/packs.js";
+import { sphereEye, spherePack } from "./sphere-pack.js";
 
 const clay = fileURLToPath(new URL("./fixtures/clay-pack.ts", import.meta.url));
 const named = fileURLToPath(new URL("./fixtures/named-pack.ts", import.meta.url));
@@ -288,5 +289,122 @@ describe("parsePack render conformance", () => {
 
   it("rejects a non-array surface stops value", () => {
     rejects({ surface: { stops: "x" } });
+  });
+});
+
+describe("parsePack sphere eyes", () => {
+  const ORIGIN = "/tmp/sphere-pack.ts";
+  const EYE = sphereEye;
+
+  const withEyes = (patch: Record<string, unknown>) => spherePack({ eyes: patch });
+
+  /** Puts `first`/`second` in the two eye slots, keeping every other field lawful. */
+  const eyePair = (first: Record<string, unknown>, second: Record<string, unknown> = {}) => ({
+    eyes: [
+      { ...EYE, ...first },
+      { ...EYE, lateralDeg: -EYE.lateralDeg, ...second },
+    ],
+  });
+
+  const rejects = (eyes: Record<string, unknown>, field: RegExp) => {
+    const pack = withEyes(eyes);
+    expect(() => parsePack(pack, ORIGIN), String(field)).toThrow(PackError);
+    expect(() => parsePack(pack, ORIGIN), String(field)).toThrow(ORIGIN);
+    expect(() => parsePack(pack, ORIGIN), String(field)).toThrow(field);
+  };
+
+  it("accepts a lawful sphere pack", () => {
+    expect(parsePack(spherePack(), ORIGIN).id).toBe("organic-blob");
+  });
+
+  it("treats absent kind as rect, so old packs still parse", () => {
+    expect(parsePack(builtinPacks()[0], "builtin").id).toBe("organic-blob");
+  });
+
+  it("rejects an eye kind other than rect or sphere, naming eyes.kind", () => {
+    rejects({ kind: "capsule" }, /eyes\.kind/);
+  });
+
+  it("rejects a zero sphere radius, naming eyes.sphereRadius", () => {
+    expect(() => parsePack(withEyes({ sphereRadius: 0 }), ORIGIN)).toThrow(
+      /eyes\.sphereRadius must be a positive number/,
+    );
+  });
+
+  it("rejects a negative sphere radius", () => {
+    rejects({ sphereRadius: -1 }, /eyes\.sphereRadius/);
+  });
+
+  it("rejects a non-finite sphere radius", () => {
+    rejects({ sphereRadius: Number.NaN }, /eyes\.sphereRadius/);
+  });
+
+  it("rejects anything other than two sphere eyes", () => {
+    rejects(
+      { eyes: [EYE, { ...EYE, lateralDeg: -18 }, EYE] },
+      /eyes\.eyes must have exactly 2 entries/,
+    );
+  });
+
+  it("rejects cull >= fade, naming eyes.cullAtDepth", () => {
+    rejects({ cullAtDepth: 0.3, fadeFromDepth: 0.1 }, /eyes\.cullAtDepth/);
+  });
+
+  it("rejects a depth threshold outside [0, 1]", () => {
+    rejects({ fadeFromDepth: 1.2 }, /eyes\.fadeFromDepth/);
+    rejects({ cullAtDepth: -0.1 }, /eyes\.cullAtDepth/);
+  });
+
+  it("rejects a body coupling outside [0, 1], naming eyes.bodyCoupling", () => {
+    rejects({ bodyCoupling: 3 }, /eyes\.bodyCoupling/);
+    rejects({ bodyCoupling: -0.2 }, /eyes\.bodyCoupling/);
+  });
+
+  it("rejects a body pitch follow outside [0, 1], naming eyes.bodyPitchFollow", () => {
+    rejects({ bodyPitchFollow: 1.5 }, /eyes\.bodyPitchFollow/);
+  });
+
+  it("rejects a non-finite optional anchor, naming eyes.anchorY", () => {
+    rejects({ anchorY: Number.NaN }, /eyes\.anchorY/);
+  });
+
+  it("rejects a non-finite rest tilt, naming eyes.restTiltDeg", () => {
+    rejects({ restTiltDeg: Number.POSITIVE_INFINITY }, /eyes\.restTiltDeg/);
+  });
+
+  it("rejects a half-width of zero when a size is authored", () => {
+    rejects(eyePair({ halfWidth: 0 }), /eyes\.eyes\[0\]\.halfWidth/);
+  });
+
+  it("rejects a half-height of zero when a size is authored", () => {
+    rejects(eyePair({ halfHeight: 0 }), /eyes\.eyes\[0\]\.halfHeight/);
+  });
+
+  it("rejects a 30 degree tilt on a circular eye: it can never be seen", () => {
+    rejects(eyePair({ halfWidth: 1, halfHeight: 1, tiltDeg: 30 }), /eyes\.eyes\[0\]\.tiltDeg/);
+  });
+
+  it("rejects a sub-20 degree tilt inside the narrow aspect band", () => {
+    rejects(eyePair({ halfWidth: 1, halfHeight: 1, tiltDeg: 10 }), /eyes\.eyes\[0\]\.tiltDeg/);
+  });
+
+  it("accepts a 30 degree tilt on a long eye, where the tilt is visible", () => {
+    const pack = withEyes(eyePair({ tiltDeg: 30 }));
+    expect(parsePack(pack, ORIGIN).id).toBe("organic-blob");
+  });
+
+  it("accepts zero eye sizes as placeholders that buildGeometry derives", () => {
+    // Both shipped sphere packs author 0/0: the real size comes from `deriveFace`.
+    const pack = withEyes({
+      eyes: [
+        { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },
+        { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },
+      ],
+    });
+    expect(parsePack(pack, ORIGIN).id).toBe("organic-blob");
+  });
+
+  it("names the second eye when it is the broken one", () => {
+    rejects(eyePair({}, { halfHeight: 0 }), /eyes\.eyes\[1\]\.halfHeight/);
   });
 });
