@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec } from "@botavatar/engine";
+import { buildAvatarSpec, toGeometry } from "@botavatar/engine";
+import type { AvatarGeometry } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
-import { renderSvg } from "../src/index.js";
+import { renderGeometry, renderSvg } from "../src/index.js";
 
 const spec = buildAvatarSpec(organicBlob, "bot_123");
 
@@ -159,5 +160,39 @@ describe("element ids", () => {
     expect(idOf(first)).not.toBe(idOf(second));
     expect(first).toContain(`fill="url(#${idOf(first)})"`);
     expect(second).toContain(`fill="url(#${idOf(second)})"`);
+  });
+});
+
+describe("renderGeometry", () => {
+  it("matches renderSvg byte for byte for a legacy rig", () => {
+    for (const identity of ["alice", "bob", "张三", "wall-3-0"]) {
+      const spec = buildAvatarSpec(organicBlob, identity);
+      for (const state of ["idle", "working"] as const) {
+        for (const size of [32, 96, 160]) {
+          expect(renderGeometry(toGeometry(organicBlob, spec), { size, state })).toBe(
+            renderSvg(spec, { size, state }),
+          );
+        }
+      }
+    }
+  });
+
+  it("refuses a rig it cannot draw yet", () => {
+    const geometry = toGeometry(organicBlob, buildAvatarSpec(organicBlob, "alice"));
+    const sphere: AvatarGeometry = {
+      ...geometry,
+      rig: {
+        kind: "sphere",
+        sphereRadius: 60,
+        splitDeg: 26,
+        eyes: [
+          { lateralDeg: -18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },
+          { lateralDeg: 18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },
+        ],
+        fadeFromDepth: 0.25,
+        cullAtDepth: -0.15,
+      },
+    };
+    expect(() => renderGeometry(sphere, { size: 32 })).toThrow(/sphere/i);
   });
 });

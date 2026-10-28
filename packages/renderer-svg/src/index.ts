@@ -1,5 +1,5 @@
-import { clipFrame } from "@botavatar/engine";
-import type { AvatarSpec, ClipFrame } from "@botavatar/engine";
+import { clipFrame, outlinePath } from "@botavatar/engine";
+import type { AvatarGeometry, AvatarSpec, ClipFrame } from "@botavatar/engine";
 
 export interface RenderOptions {
   size: number;
@@ -185,6 +185,48 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
     grainMarkup(spec, id) +
     `</svg>`
   );
+}
+
+/**
+ * Renders geometry through the v1 path. Deliberately folds the geometry back
+ * into an equivalent spec and delegates: this step proves the geometry can
+ * express today's avatar, not that the renderer has been rewritten.
+ *
+ * The fold reconstructs the path from the body points (geometry is
+ * self-sufficient), and takes the palette entry's id and name from the ink so
+ * the gradient id matches the v1 render byte for byte.
+ */
+export function renderGeometry(geometry: AvatarGeometry, options: RenderOptions): string {
+  if (geometry.rig.kind !== "rect") {
+    throw new Error(`renderGeometry: ${geometry.rig.kind} rig is not implemented yet`);
+  }
+  const rig = geometry.rig;
+  const spec: AvatarSpec = {
+    packId: geometry.packId,
+    packVersion: geometry.packVersion,
+    identity: geometry.identity,
+    seed: geometry.seed,
+    family: geometry.family,
+    look: geometry.look,
+    color: {
+      id: geometry.ink.bodyId,
+      name: geometry.ink.bodyName,
+      light: geometry.ink.body,
+      dark: geometry.ink.bodyHighlight,
+      eye: geometry.ink.eyes,
+    },
+    path: outlinePath(geometry.body.outline, {
+      phase: geometry.body.phase,
+      smoothingPasses: geometry.body.smoothingPasses,
+    }),
+    eyes: rig.eyes,
+    eyeRotation: rig.rotationDeg,
+    durationMs: geometry.durationMs,
+    motionAmplitude: geometry.motionAmplitude,
+    clip: geometry.clip,
+    viewBox: geometry.body.viewBox,
+  };
+  return renderSvg(spec, options);
 }
 
 export const svgRenderer: AvatarRenderer<string> = { render: renderSvg };
