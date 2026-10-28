@@ -4,7 +4,7 @@ import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "@botavatar/svg";
 import { clay } from "../src/packs/clay.js";
 import { orb } from "../src/packs/orb.js";
-import { poseGeometry } from "../src/pose.js";
+import { poseGeometry, gazeFromPointer } from "../src/pose.js";
 
 const IDENTITIES = ["alice", "bot_123", "wall-3-0", "research"];
 
@@ -146,8 +146,10 @@ describe("the orb pack through the geometry path", () => {
     for (const index of [0, 1] as const) {
       const tiltUp = angleDelta(up[index]!, rest[index]!);
       const tiltDown = angleDelta(down[index]!, rest[index]!);
-      expect(Math.abs(tiltUp)).toBeGreaterThan(5);
-      expect(Math.abs(tiltDown)).toBeGreaterThan(5);
+      // The head now takes 35% of the pitch, so the eyes see 13° of the 20 and lean
+      // less than they did before the coupling; the sign is still unmistakable.
+      expect(Math.abs(tiltUp)).toBeGreaterThan(2);
+      expect(Math.abs(tiltDown)).toBeGreaterThan(2);
       expect(Math.sign(tiltUp)).toBe(-Math.sign(tiltDown));
     }
   });
@@ -164,9 +166,10 @@ describe("the orb pack through the geometry path", () => {
     const up = drawn(20);
     const down = drawn(-20);
     for (const index of [0, 1] as const) {
-      // The projection carries the remaining pitch (this pack gives none to the head):
-      // the eye centres follow the gaze up/down, and the capsule length foreshortens
-      // as its axis leaves the screen plane. The y axis is the viewBox's, pointing down.
+      // The projection carries the pitch the head does not take (65% for the orb),
+      // so the eye centres still follow the gaze up/down, and the capsule length
+      // foreshortens as its axis leaves the screen plane. The y axis is the
+      // viewBox's, pointing down.
       expect(up[index]!.cy).toBeLessThan(rest[index]!.cy);
       expect(down[index]!.cy).toBeGreaterThan(rest[index]!.cy);
       expect(capsuleHeight(up[index]!)).toBeLessThan(capsuleHeight(rest[index]!));
@@ -211,5 +214,62 @@ describe("the orb pack through the geometry path", () => {
     expect(/<linearGradient[\s\S]*?<\/linearGradient>/.exec(yawed)?.[0]).toBe(
       /<linearGradient[\s\S]*?<\/linearGradient>/.exec(rest)?.[0],
     );
+  });
+});
+
+describe("pointer follow: the head and the eyes share one gaze", () => {
+  /** A square card centred at (200, 200); its top-left corner is (100, 100). */
+  const CARD = { left: 100, top: 100, width: 200, height: 200 };
+
+  it("turns and nods the head by the pack's share at the top-left corner", () => {
+    const geometry = buildGeometry(orb, "alice");
+    const followed = renderGeometry(
+      poseGeometry(geometry, { gaze: gazeFromPointer(100, 100, CARD), lidOpen: 1 }),
+      { size: 160 },
+    );
+    // Head: 35% of −45° = −15.75°; nod: −25° × 0.35 × 0.6 = −5.25 viewBox units up.
+    expect(followed).toContain('<g transform="translate(0,-5.25)"><g transform="rotate(-15.75)">');
+  });
+
+  it("gives the eyes exactly the remainder of the turn and the pitch", () => {
+    const geometry = buildGeometry(orb, "alice");
+    if (geometry.rig.kind !== "sphere") throw new Error("orb is a sphere pack");
+    const corner = gazeFromPointer(100, 100, CARD);
+    const followed = renderGeometry(
+      poseGeometry(geometry, { gaze: corner, lidOpen: 1 }),
+      { size: 160 },
+    );
+    // Render the same gaze with the head taking nothing: if the split is total, the
+    // eyes must be drawn at the same size and angle in both cases.
+    const eyeOnly = {
+      ...geometry,
+      rig: { ...geometry.rig, bodyCoupling: 0, bodyPitchFollow: 0 },
+    };
+    const remainder = {
+      yaw: corner.yaw * (1 - geometry.rig.bodyCoupling),
+      pitch: corner.pitch * (1 - (geometry.rig.bodyPitchFollow ?? 0)),
+    };
+    const eyeOnlySvg = renderGeometry(
+      poseGeometry(eyeOnly, { gaze: remainder, lidOpen: 1 }),
+      { size: 160 },
+    );
+    const a = capsules(followed);
+    const b = capsules(eyeOnlySvg);
+    expect(a).toHaveLength(2);
+    for (const index of [0, 1] as const) {
+      expect(a[index]!.width).toBeCloseTo(b[index]!.width, 6);
+      expect(a[index]!.height).toBeCloseTo(b[index]!.height, 6);
+      expect(angleDelta(a[index]!.angle, b[index]!.angle)).toBeCloseTo(0, 5);
+    }
+  });
+
+  it("returns to the rest pose when the pointer leaves", () => {
+    // The card clears its follow state on pointerleave; at the renderer level that is
+    // the sliders' pose: no head wrapper, no nod, both eyes symmetric.
+    const geometry = buildGeometry(orb, "alice");
+    const rest = renderGeometry(geometry, { size: 160 });
+    expect(rest).not.toContain('<g transform="translate(0,');
+    expect(rest).not.toMatch(/<g transform="rotate\(/);
+    expect(capsules(rest)).toHaveLength(2);
   });
 });

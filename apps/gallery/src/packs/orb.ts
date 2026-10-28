@@ -13,16 +13,23 @@ import { motion, palette, shapes } from "@botavatar/pack-organic-blob";
 export const orbEyes: SphereEyeRig = {
   kind: "sphere",
   sphereRadius: 44,
-  // Eye 0 sits at lateral +18, eye 1 at -18, so the two are mirror images at rest.
+  // Placeholders: `buildGeometry` overrides `lateralDeg`, `halfWidth`, `halfHeight`
+  // and `tiltDeg` with values derived from the body outline (`deriveFace`), plus
+  // `restTiltDeg` below. Only `verticalDeg` is authored here.
   eyes: [
-    { lateralDeg: 18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: -6 },
-    { lateralDeg: -18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: 6 },
+    { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },
+    { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },
   ],
   fadeFromDepth: 0.12,
   cullAtDepth: 0.02,
   // 0.35 is enough for the slider to read as a head turn at ±45 (≈16° of body),
   // while the eyes still carry most of the gaze and keep their capsule shape.
   bodyCoupling: 0.35,
+  // Symmetric to the coupling: the head nods with 35% of the pitch, the eyes take
+  // the rest, so the vertical gaze reads as one object moving.
+  bodyPitchFollow: 0.35,
+  // Parallel rest tilt, both eyes the same way; mirrored tilt is reserved for expressions.
+  restTiltDeg: -4,
 };
 
 export const orb: StylePack = {

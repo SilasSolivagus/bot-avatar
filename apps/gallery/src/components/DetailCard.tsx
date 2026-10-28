@@ -1,7 +1,8 @@
 import type { AvatarGeometry, Pose } from "@botavatar/engine";
 import { renderGeometry } from "@botavatar/svg";
 import { useEffect, useRef, useState } from "react";
-import { poseGeometry, REST_POSE } from "../pose.js";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { gazeFromPointer, poseGeometry, REST_POSE } from "../pose.js";
 
 type Motion = "idle" | "working";
 type CopyState = "idle" | "copied" | "fallback";
@@ -75,6 +76,12 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [gaze, setGaze] = useState<Pose["gaze"]>(REST_POSE.gaze);
   const [lidOpen, setLidOpen] = useState(REST_POSE.lidOpen);
+  /**
+   * The pointer's gaze while it is over the card, or `null` when the sliders own the
+   * gaze. The card is the follow area; the controls are excluded in `followPointer`
+   * so a slider drag is never pulled back by a second pose.
+   */
+  const [follow, setFollow] = useState<Pose["gaze"] | null>(null);
   const fallback = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<number | undefined>(undefined);
   const identity = geometry?.identity ?? "";
@@ -84,6 +91,7 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
     setCopyState("idle");
     setGaze({ ...REST_POSE.gaze });
     setLidOpen(REST_POSE.lidOpen);
+    setFollow(null);
   }, [identity]);
 
   useEffect(
@@ -109,11 +117,38 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
   }
 
   // The sliders are a pose on top of the identity's geometry, never a second avatar:
-  // the wall keeps rendering the same object, unchanged.
-  const posed = poseGeometry(geometry, { gaze, lidOpen });
+  // the wall keeps rendering the same object, unchanged. A pointer over the card
+  // replaces the sliders' gaze while it is there; leaving restores the sliders.
+  const posed = poseGeometry(geometry, { gaze: follow ?? gaze, lidOpen });
   const svg = renderGeometry(posed, { size, state: motion });
   const png = pngHref(service, geometry, size, motion);
   const sphere = geometry.rig.kind === "sphere";
+  const following = follow !== null;
+
+  /**
+   * Pointer-follow. The card is the follow area, but a pointer on a control belongs
+   * to that control: following is suspended there, so dragging a slider is never
+   * overridden on the next move and the manual mode keeps working. Moving back onto
+   * the card outside its controls hands the gaze to the pointer again.
+   */
+  const followPointer = (event: ReactPointerEvent<HTMLElement>) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("input, button, a, textarea, select")) {
+      setFollow(null);
+      return;
+    }
+    const next = gazeFromPointer(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+    );
+    // Skip the re-render when the pointer stays within the same degree.
+    setFollow((current) =>
+      current !== null && current.yaw === next.yaw && current.pitch === next.pitch ? current : next,
+    );
+  };
+
+  const stopFollowing = () => setFollow(null);
 
   const copySvg = async () => {
     try {
@@ -140,7 +175,13 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
   };
 
   return (
-    <section className="detail panel" aria-label="Identity detail">
+    <section
+      className="detail panel"
+      aria-label="Identity detail"
+      onPointerMove={sphere ? followPointer : undefined}
+      onPointerLeave={sphere ? stopFollowing : undefined}
+      onPointerCancel={sphere ? stopFollowing : undefined}
+    >
       <div className="detail-head">
         <h2>Detail</h2>
         <span className="detail-id notranslate" translate="no">
@@ -200,15 +241,27 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
             min={-45}
             max={45}
             value={gaze.yaw}
-            onChange={(yaw) => setGaze({ ...gaze, yaw })}
+            onChange={(yaw) => {
+              // A control the user is moving beats a pointer that merely rests on the
+              // card: the slider becomes the mode again, even without pointer movement.
+              setFollow(null);
+              setGaze({ ...gaze, yaw });
+            }}
           />
           <GazeSlider
             name="pitch"
             min={-30}
             max={30}
             value={gaze.pitch}
-            onChange={(pitch) => setGaze({ ...gaze, pitch })}
+            onChange={(pitch) => {
+              setFollow(null);
+              setGaze({ ...gaze, pitch });
+            }}
           />
+          <span className="muted gaze-follow" aria-live="polite">
+            <span className="gaze-status">{following ? "pointer" : "sliders"}</span> steering · move
+            the pointer over the card to steer
+          </span>
           <button
             type="button"
             className="chip notranslate"
