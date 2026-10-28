@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts src/pack-hash.ts --format esm --dts --clean",
+    "build": "tsup",
     "start": "node dist/cli.js"
   },
   "dependencies": {
