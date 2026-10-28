@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { avatarTag, matchesIfNoneMatch, packHeader } from "../src/tag.js";
 
-const base = { packHash: "a".repeat(64), identity: "alice", size: 128, state: "idle" };
+const base = {
+  packHash: "a".repeat(64),
+  identity: "alice",
+  size: 128,
+  state: "idle",
+  renderBuild: "0123456789abcdef",
+};
 const packHash = "f".repeat(64);
 
 describe("avatarTag", () => {
@@ -15,6 +21,7 @@ describe("avatarTag", () => {
       identity: "alice@example.com",
       size: 1024,
       state: "working",
+      renderBuild: base.renderBuild,
     });
     expect(tag).not.toContain(packHash);
     expect(tag).not.toContain("alice");
@@ -28,6 +35,21 @@ describe("avatarTag", () => {
     expect(avatarTag({ ...base, size: 64 })).not.toBe(tag);
     expect(avatarTag({ ...base, state: "working" })).not.toBe(tag);
     expect(avatarTag({ ...base, packHash: "b".repeat(64) })).not.toBe(tag);
+  });
+});
+
+describe("render build in the tag", () => {
+  it("changes when the renderer build changes", () => {
+    expect(avatarTag({ ...base, renderBuild: "fedcba9876543210" })).not.toBe(avatarTag(base));
+  });
+
+  it("stays a quoted 16 hex string", () => {
+    expect(avatarTag(base)).toMatch(/^"[0-9a-f]{16}"$/);
+  });
+
+  it("still separates the representation kinds at one build", () => {
+    const tags = (["svg", "json", "png"] as const).map((kind) => avatarTag({ ...base, kind }));
+    expect(new Set(tags).size).toBe(3);
   });
 });
 

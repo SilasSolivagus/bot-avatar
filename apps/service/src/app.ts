@@ -1,6 +1,7 @@
 import { buildAvatarSpec } from "@botavatar/engine";
 import { renderSvg } from "@botavatar/svg";
 import { Hono } from "hono";
+import { RENDER_BUILD } from "./build-id.js";
 import type { ValidatedPack } from "./packs.js";
 import { packContentHash } from "./pack-hash.js";
 import { renderPng } from "./png.js";
@@ -107,7 +108,9 @@ export function createApp({
     }
   });
 
-  app.get("/health", (c) => c.json({ ok: true, packs: byId.size }));
+  app.get("/health", (c) =>
+    c.json({ ok: true, packs: byId.size, renderBuild: RENDER_BUILD }),
+  );
 
   app.get("/v1/packs", (c) =>
     c.json({
@@ -154,9 +157,10 @@ export function createApp({
       return c.json(errorBody("bad_state", "state must be idle or working"), 400);
     }
 
-    // The tag is opaque: a hash over the pack hash, the identity hash, the options
-    // and the representation kind. A PNG and an SVG of the same avatar never share
-    // a tag, so neither can validate the other.
+    // The tag is opaque: a hash over the pack hash, the identity hash, the options,
+    // the representation kind and the renderer build. A PNG and an SVG of the same
+    // avatar never share a tag, so neither can validate the other; and a renderer
+    // upgrade invalidates every cached avatar once, even when the pack is unchanged.
     const tag =
       kind === "json"
         ? avatarTag({
@@ -165,11 +169,13 @@ export function createApp({
             size: JSON_TAG_SIZE,
             state: JSON_TAG_STATE,
             kind: "json",
+            renderBuild: RENDER_BUILD,
           })
-        : avatarTag({ packHash, identity, size, state, kind });
+        : avatarTag({ packHash, identity, size, state, kind, renderBuild: RENDER_BUILD });
     const headers = {
       ETag: tag,
       "X-Avatar-Pack": packHeader(pack),
+      "X-Avatar-Build": RENDER_BUILD,
       "Cache-Control": CACHE_CONTROL,
     };
     if (matchesIfNoneMatch(c.req.header("if-none-match"), tag)) {

@@ -15,16 +15,29 @@ export interface TagInput {
    * Defaults to `svg` so older callers keep an SVG-scoped tag.
    */
   kind?: TagKind;
+  /**
+   * The renderer build fingerprint. A renderer change can alter the bytes of an
+   * avatar without changing the pack, the identity or the options, so the build
+   * is part of the cache key: an upgrade invalidates every cached avatar once.
+   */
+  renderBuild: string;
 }
 
 /**
  * Opaque cache tag: a hash over hashes. The pack content hash, the identity hash,
- * the render options and the representation kind are the only inputs, so no pack
- * or identity text can appear in the result.
+ * the render options, the representation kind and the renderer build are the only
+ * inputs, so no pack or identity text can appear in the result.
  */
-export function avatarTag({ packHash, identity, size, state, kind = "svg" }: TagInput): string {
+export function avatarTag({
+  packHash,
+  identity,
+  size,
+  state,
+  kind = "svg",
+  renderBuild,
+}: TagInput): string {
   const digest = createHash("sha256")
-    .update(`${packHash}|${identityHash(identity)}|${size}|${state}|${kind}`, "utf8")
+    .update(`${packHash}|${identityHash(identity)}|${size}|${state}|${kind}|${renderBuild}`, "utf8")
     .digest("hex")
     .slice(0, 16);
   return `"${digest}"`;

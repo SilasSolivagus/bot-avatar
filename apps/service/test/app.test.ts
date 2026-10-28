@@ -4,6 +4,7 @@ import { buildAvatarSpec } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderSvg } from "@botavatar/svg";
 import { createApp, parseIdentity } from "../src/app.js";
+import { RENDER_BUILD } from "../src/build-id.js";
 import { builtinPacks, parsePack } from "../src/packs.js";
 import { packContentHash } from "../src/pack-hash.js";
 
@@ -28,8 +29,53 @@ describe("health", () => {
   it("reports readiness and the number of packs", async () => {
     const res = await app.request("/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, packs: 1 });
+    expect(await res.json()).toEqual({
+      ok: true,
+      packs: 1,
+      renderBuild: expect.stringMatching(/^[0-9a-f]{16}$/),
+    });
     expect(res.headers.get("content-type")).toContain("application/json");
+  });
+});
+
+describe("render build is observable", () => {
+  it("reports the build on health and on avatar responses", async () => {
+    const health = (await (await app.request("/health")).json()) as { renderBuild: string };
+    expect(health.renderBuild).toMatch(/^[0-9a-f]{16}$/);
+    expect(health.renderBuild).toBe(RENDER_BUILD);
+    const res = await app.request("/v1/avatar/alice.svg");
+    expect(res.headers.get("x-avatar-build")).toBe(health.renderBuild);
+  });
+
+  it("carries the same build on svg, json and png", async () => {
+    for (const path of [
+      "/v1/avatar/alice.svg",
+      "/v1/avatar/alice.json",
+      "/v1/avatar/alice.png",
+    ]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("x-avatar-build"), path).toBe(RENDER_BUILD);
+    }
+  });
+
+  it("carries the build on a 304", async () => {
+    const first = await app.request("/v1/avatar/alice.svg");
+    const second = await app.request("/v1/avatar/alice.svg", {
+      headers: { "if-none-match": first.headers.get("etag")! },
+    });
+    expect(second.status).toBe(304);
+    expect(second.headers.get("x-avatar-build")).toBe(RENDER_BUILD);
+  });
+
+  it("keeps svg, json and png on different tags at the same build", async () => {
+    const tags = await Promise.all(
+      ["svg", "json", "png"].map(async (kind) => {
+        const res = await app.request(`/v1/avatar/alice.${kind}`);
+        return res.headers.get("etag");
+      }),
+    );
+    expect(new Set(tags).size).toBe(3);
   });
 });
 
