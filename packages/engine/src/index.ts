@@ -24,6 +24,17 @@ export { avatarSeed } from "./seed.js";
 export { avatarAssignableLooks, avatarFamily, avatarLook } from "./family.js";
 export { outlinePath, phaseForSeed } from "./outline.js";
 export { colorIndex, fnv1a } from "./color.js";
+export {
+  PROFILE_SAMPLES,
+  harmonicProfile,
+  hullOfCirclesProfile,
+  normalizeRadii,
+  radiiToPoints,
+  regularPolygonProfile,
+  superellipseProfile,
+  unionOfCirclesProfile,
+} from "./profile.js";
+export type { Circle, HarmonicTerm } from "./profile.js";
 export { buildAvatarSpec } from "./spec.js";
 export { buildGeometry } from "./build-geometry.js";
 export { toGeometry } from "./geometry-from-spec.js";
