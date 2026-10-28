@@ -77,6 +77,12 @@ Logs never contain the identity, only a hash prefix.
 
 ## Gallery
 
+<img src="docs/gallery.png" alt="The comparison wall: 40 identical-size avatars in a grid, each captioned with its family, look and colour name, above a banner reporting that the wall is balanced at max 5 against an allowance of 5" width="720">
+
+Forty identities, one pack, the same view a reviewer uses to judge whether these read as
+different characters. The green banner is the balance metric: no look may exceed
+`ceil(n / looks)` identities.
+
 The gallery is a Vite + React app that imports the library directly — no service, no fetch:
 
 ```bash
