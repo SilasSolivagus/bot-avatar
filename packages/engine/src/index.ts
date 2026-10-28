@@ -18,6 +18,8 @@ export type {
 } from "./geometry.js";
 export type { ProjectedEye } from "./eye-projection.js";
 export { projectEye } from "./eye-projection.js";
+export type { Face, FaceStyle } from "./face.js";
+export { deriveFace, radiusAtAngle } from "./face.js";
 export { avatarSeed } from "./seed.js";
 export { avatarAssignableLooks, avatarFamily, avatarLook } from "./family.js";
 export { outlinePath, phaseForSeed } from "./outline.js";

@@ -1,5 +1,6 @@
+import { deriveFace } from "./face.js";
 import { toGeometry } from "./geometry-from-spec.js";
-import type { AvatarGeometry, EyeRig } from "./geometry.js";
+import type { AvatarGeometry, SphereEyeRig } from "./geometry.js";
 import { buildAvatarSpec } from "./spec.js";
 import type { StylePack } from "./spec.js";
 
@@ -20,22 +21,47 @@ export function buildGeometry(pack: StylePack, identity: string): AvatarGeometry
     return toGeometry(pack, buildAvatarSpec(pack, identity));
   }
 
-  const rig = pack.eyes as unknown as Extract<EyeRig, { kind: "sphere" }>;
+  const rig = pack.eyes as unknown as SphereEyeRig;
   // v1 适配器会读 `eyes.rotation`，而球面包不携带 v1 的矩形眼与 rotation；它产出
   // 的眼睛会在下面被整个替换，所以喂给它一组中性的 v1 眼睛，而不是让它去读不存在的字段。
   const v1Pack: StylePack = {
     ...pack,
     eyes: { eyes: [], rotation: { modulo: 1, spread: 0 } },
   };
+  const geometry = toGeometry(v1Pack, buildAvatarSpec(v1Pack, identity));
+
+  // For a sphere rig the eye size, spacing and anchor are a property of the body
+  // outline, not of the pack: `deriveFace` measures the shape and decides. Values
+  // declared in the pack's eye block (`lateralDeg`, `halfWidth`, `halfHeight`,
+  // `tiltDeg`) are therefore ignored for sphere rigs — a pack only chooses the
+  // sphere radius, the depth band and the coupling.
+  const face = deriveFace(geometry.body.outline);
+  const restTiltDeg = Number.isFinite(rig.restTiltDeg) ? rig.restTiltDeg! : 0;
+  const bodyPitchFollow = Number.isFinite(rig.bodyPitchFollow) ? rig.bodyPitchFollow! : 0;
+
+  const derived = rig.eyes.map((eye, index) => ({
+    ...eye,
+    // Positive `lateralDeg` lands on screen's −x side (the projection mirrors it),
+    // so eye 0 is +split and eye 1 is −split: the pair opens symmetrically.
+    lateralDeg: index === 0 ? face.splitDeg : -face.splitDeg,
+    halfWidth: face.halfWidth,
+    halfHeight: face.halfHeight,
+    // Rest tilt is the same direction on both eyes: parallel, never mirrored.
+    tiltDeg: restTiltDeg,
+  })) as unknown as SphereEyeRig["eyes"];
+
   return {
-    ...toGeometry(v1Pack, buildAvatarSpec(v1Pack, identity)),
+    ...geometry,
     rig: {
       kind: "sphere",
       sphereRadius: rig.sphereRadius,
-      eyes: rig.eyes,
+      eyes: derived,
       fadeFromDepth: rig.fadeFromDepth,
       cullAtDepth: rig.cullAtDepth,
       bodyCoupling: rig.bodyCoupling,
+      bodyPitchFollow,
+      restTiltDeg,
+      anchorY: face.dy,
     },
     pose: { gaze: { yaw: 0, pitch: 0 }, lidOpen: 1 },
   };

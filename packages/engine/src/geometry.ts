@@ -42,6 +42,22 @@ export interface SphereEyeRig {
    * 只转 group 而不降投影 yaw 会让眼睛相对脸多转一遍。
    */
   bodyCoupling: number;
+  /**
+   * 俯仰分给头部的比例，0–1；与 {@link bodyCoupling} 对称。
+   * 渲染器把头的竖直位移写成 `−pitch × bodyPitchFollow × 0.6`，投影只用剩下的
+   * `pitch × (1 − bodyPitchFollow)`，总量守恒。缺省按 0 处理，老 pack 因此不变。
+   */
+  bodyPitchFollow?: number;
+  /**
+   * 眼睛的静止倾斜（度，同向、不镜像）。由 `buildGeometry` 写进两只眼睛的
+   * `tiltDeg`；镜像倾斜只留给表情，不作为静止形态。
+   */
+  restTiltDeg?: number;
+  /**
+   * 眼睛组的竖直锚点偏移（viewBox 单位），由轮廓推导。脸不一定在包围盒中心，
+   * 渲染器把它加到投影中心的 y 上。缺省按 0 处理。
+   */
+  anchorY?: number;
 }
 
 export type EyeRig = RectEyeRig | SphereEyeRig;
