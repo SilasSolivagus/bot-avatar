@@ -263,12 +263,12 @@ function renderSphere(
 
   let capsules = "";
   for (const index of [0, 1] as const) {
-    const eye = rig.eyes[index];
     const [a, b, c, d, e, f] = projectEye(rig, geometry.pose, index).matrix.map(number);
+    // A unit capsule: the matrix already carries the half-extents, the tilt and the
+    // centre, so the rect must not repeat them. `rx="1"` on a 2×2 rect is a full
+    // semicircle end, which survives the anisotropic scale the projection applies.
     capsules +=
-      `<rect x="${number(-eye.halfWidth)}" y="${number(-eye.halfHeight)}"` +
-      ` width="${number(2 * eye.halfWidth)}" height="${number(2 * eye.halfHeight)}"` +
-      ` rx="${number(eye.halfWidth)}"` +
+      `<rect x="-1" y="-1" width="2" height="2" rx="1"` +
       ` transform="matrix(${a} ${b} ${c} ${d} ${e} ${f})"` +
       ` fill="${escapeAttribute(geometry.ink.eyes)}" />`;
   }

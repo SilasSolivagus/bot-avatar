@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec, buildGeometry, projectEye, toGeometry } from "@botavatar/engine";
+import { buildAvatarSpec, buildGeometry, toGeometry } from "@botavatar/engine";
 import type { SphereEyeRig, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "../src/index.js";
@@ -239,10 +239,14 @@ describe("sphere rig", () => {
       .trim()
       .split(/[\s,]+/)
       .map(Number);
-  /** Same fixed-decimal rule the renderer applies, so expectations are exact. */
-  const rounded = (values: readonly number[]) => values.map((value) => Number(value.toFixed(3)) + 0);
+  /**
+   * The matrix columns are the capsule's own axes: the first is its width, the second
+   * its length, each already scaled by the projection. The drawn rect is unit-sized.
+   */
   const width = (values: readonly number[]) => Math.hypot(values[0]!, values[1]!);
   const height = (values: readonly number[]) => Math.hypot(values[2]!, values[3]!);
+  const drawnWidth = (element: string) => 2 * width(matrix(element));
+  const drawnLength = (element: string) => 2 * height(matrix(element));
   const gradientId = (svg: string) => svg.match(/<linearGradient id="([^"]+)"/)?.[1];
 
   it("draws one capsule per eye with a projection matrix", () => {
@@ -254,21 +258,48 @@ describe("sphere rig", () => {
     expect(svg).toContain('height="96"');
   });
 
-  it("centres each capsule on the origin and lets the matrix carry the translation", () => {
-    const drawn = rects(renderGeometry(geometry, { size: 96 }));
-    expect(drawn).toHaveLength(2);
-    for (const capsule of drawn) {
-      // The rect is the capsule in its own frame: matrix() already positions it.
-      expect(attribute(capsule, "x")).toBe("-4.2");
-      expect(attribute(capsule, "y")).toBe("-12.5");
-      expect(attribute(capsule, "width")).toBe("8.4");
-      expect(attribute(capsule, "height")).toBe("25");
-      expect(attribute(capsule, "rx")).toBe("4.2");
+  it("draws the capsule at the rig's size, with the projection matrix carrying the scale", () => {
+    const drawnRects = rects(renderGeometry(geometry, { size: 96 }));
+    expect(drawnRects).toHaveLength(2);
+    for (const capsule of drawnRects) {
+      // The rect is a unit capsule in its own frame: matrix() already carries the
+      // position, the per-axis scale and the tilt. Drawing it at ±halfWidth applied
+      // the scale a second time and made every eye four times too large.
+      expect(attribute(capsule, "x")).toBe("-1");
+      expect(attribute(capsule, "y")).toBe("-1");
+      expect(attribute(capsule, "width")).toBe("2");
+      expect(attribute(capsule, "height")).toBe("2");
+      expect(attribute(capsule, "rx")).toBe("1");
       expect(attribute(capsule, "fill")).toBe(geometry.ink.eyes);
     }
-    // The projection's centre is the translation column.
-    const expected = ([0, 1] as const).map((index) => projectEye(rig, geometry.pose, index).matrix);
-    expect(drawn.map(matrix)).toEqual(expected.map(rounded));
+    // What the rect actually occupies after the transform: an 8 × 25 capsule in a
+    // 120 viewBox, the size of organic-blob's 7 × 24 rect eyes. The width is
+    // foreshortened by the eye's lateral angle — that is what the projection is for.
+    for (const [index, capsule] of drawnRects.entries()) {
+      const eye = rig.eyes[index as 0 | 1];
+      const lateral = (Math.abs(eye.lateralDeg) * Math.PI) / 180;
+      expect(drawnWidth(capsule)).toBeCloseTo(2 * eye.halfWidth * Math.cos(lateral), 1);
+      expect(drawnLength(capsule)).toBeCloseTo(2 * eye.halfHeight, 1);
+    }
+  });
+
+  it("narrows only the far eye at 40° of yaw, in both directions", () => {
+    const widths = (yaw: number) =>
+      rects(
+        renderGeometry(
+          { ...geometry, pose: { gaze: { yaw, pitch: 0 }, lidOpen: 1 } },
+          { size: 96 },
+        ),
+      ).map(drawnWidth);
+    const rest = widths(0);
+    // Positive yaw turns toward +x, where eye 1 sits: it is the far eye and narrows,
+    // while the near eye only foreshortens by cos(40° − 18°) / cos(18°) ≈ 2.5%.
+    for (const [yaw, far] of [[40, 1], [-40, 0]] as const) {
+      const near = far === 0 ? 1 : 0;
+      const turned = widths(yaw);
+      expect(turned[far]!).toBeLessThan(rest[far]! * 0.65);
+      expect(turned[near]!).toBeGreaterThan(rest[near]! * 0.95);
+    }
   });
 
   it("narrows the far eye when the gaze turns", () => {
