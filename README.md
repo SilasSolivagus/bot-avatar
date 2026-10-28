@@ -56,16 +56,22 @@ node apps/service/dist/cli.js --pack ./my-pack.ts                # add a local p
 | `GET /v1/avatar/:identity.svg?pack=&size=&state=` | SVG, immutable-cacheable |
 | `GET /v1/avatar/:identity.png?pack=&size=&state=` | PNG rasterised from the same SVG, transparent background |
 | `GET /v1/avatar/:identity.json?pack=` | The `AvatarSpec` the SVG was built from |
-| `GET /health` | `{ ok: true, packs: n }` |
+| `GET /health` | `{ ok: true, packs: n, renderBuild: "<16-hex>" }` |
 
 `identity` is URL-decoded and limited to 1–200 characters; `size` is 16–1024 (default 128); `state` is `idle` or `working`.
-Responses carry `ETag`, `X-Avatar-Pack` and `Cache-Control: public, max-age=31536000, immutable`.
+Responses carry `ETag`, `X-Avatar-Pack`, `X-Avatar-Build` and `Cache-Control: public, max-age=31536000, immutable`.
+
+The cache key includes the renderer build: upgrading the rendering code invalidates every
+cached avatar once, deliberately, so a client holding the old tag refetches and sees the
+new bytes. `X-Avatar-Build` reports the fingerprint of the build the running service is
+serving.
 
 - `ETag` is an opaque content tag — a quoted 16-hex digest over the pack's content hash,
-  the identity hash, `size`, `state` and the representation kind. No pack id, version or
-  identity text appears in it, so editing a pack's data invalidates cached avatars even
-  when its `version` field is unchanged, and no header-breaking character can reach the
-  wire. The kind marker means a PNG tag never validates an SVG entity, and vice versa.
+  the identity hash, `size`, `state`, the representation kind and the renderer build. No
+  pack id, version or identity text appears in it, so editing a pack's data invalidates
+  cached avatars even when its `version` field is unchanged, and no header-breaking
+  character can reach the wire. The kind marker means a PNG tag never validates an SVG
+  entity, and vice versa.
 - `X-Avatar-Pack` carries the readable `id@version` for humans in devtools and logs. It
   never affects caching: the tag alone decides.
 - A request whose `If-None-Match` (a list, `*` or `W/`) matches that tag gets a bodyless

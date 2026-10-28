@@ -123,3 +123,13 @@ the unrounded value against 50, so it passed with no margin). Concurrency 1000 i
 deployment-level figure, which the amended §12 does not ask this host to settle; the hit
 path is hash-only now, but that figure still cannot be measured on a host that also runs the
 load generator.
+
+## Before the render fingerprint
+
+Every number on this page was recorded before the `ETag` included the renderer build
+fingerprint. The tag is still one SHA-256 over a short string: the fingerprint adds 16
+characters to that string and one `X-Avatar-Build` header to the response, and the 304 path
+still returns before building a spec or rendering. No benchmark was re-recorded for this
+change, so the tables above are historical measurements of the M1 and M1.5 builds; treat
+them as such rather than as a measurement of the current tag.
+
