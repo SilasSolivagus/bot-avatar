@@ -208,7 +208,6 @@ describe("renderGeometry", () => {
       rig: {
         kind: "sphere",
         sphereRadius: 60,
-        splitDeg: 26,
         eyes: [
           { lateralDeg: -18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },
           { lateralDeg: 18, verticalDeg: 0, halfWidth: 4, halfHeight: 7, tiltDeg: 0 },

@@ -23,11 +23,13 @@ export interface RectEyeRig {
   rotationDeg: number;
 }
 
-/** v2 的眼睛模型：球面上两只胶囊，按注视角投影。第 2 步才实现渲染。 */
+/**
+ * v2 的眼睛模型：球面上两只胶囊，按注视角投影。
+ * 分开量只由每只眼睛自己的 `lateralDeg` 表达，不再有整组的 `splitDeg`。
+ */
 export interface SphereEyeRig {
   kind: "sphere";
   sphereRadius: number;
-  splitDeg: number;
   eyes: readonly [
     { lateralDeg: number; verticalDeg: number; halfWidth: number; halfHeight: number; tiltDeg: number },
     { lateralDeg: number; verticalDeg: number; halfWidth: number; halfHeight: number; tiltDeg: number },

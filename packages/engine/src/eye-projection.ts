@@ -20,6 +20,12 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 const deg = (value: number): number => (value * Math.PI) / 180;
 
 /**
+ * 俯仰上界。到 90° 时 `cross([0, -1, 0], forward)` 退化为零向量，切平面基不存在，
+ * 矩阵会塌缩；钳制在 80° 让函数对任意输入都有确定输出。
+ */
+const MAX_PITCH_DEG = 80;
+
+/**
  * 一只眼睛在球面上的正交投影。坐标系为 y 向下（与 viewBox 一致）。
  *
  * 顺序固定：切平面基向量 → 单眼倾斜 → 眨眼竖直压扁。反了的话，
@@ -27,7 +33,7 @@ const deg = (value: number): number => (value * Math.PI) / 180;
  */
 export function projectEye(rig: SphereEyeRig, pose: Pose, index: 0 | 1): ProjectedEye {
   const yaw = deg(pose.gaze.yaw);
-  const pitch = deg(pose.gaze.pitch);
+  const pitch = deg(Math.max(-MAX_PITCH_DEG, Math.min(MAX_PITCH_DEG, pose.gaze.pitch)));
   // 注视方向；y 向下，所以 pitch 取负
   const forward: Vec3 = [
     Math.sin(yaw) * Math.cos(pitch),

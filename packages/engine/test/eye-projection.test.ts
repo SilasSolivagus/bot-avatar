@@ -6,7 +6,6 @@ import type { SphereEyeRig } from "../src/geometry.js";
 const rig: SphereEyeRig = {
   kind: "sphere",
   sphereRadius: 44,
-  splitDeg: 18,
   eyes: [
     { lateralDeg: 18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: 0 },
     { lateralDeg: -18, verticalDeg: 0, halfWidth: 4.2, halfHeight: 12.5, tiltDeg: 0 },
@@ -65,6 +64,20 @@ describe("projectEye", () => {
     const a = projectEye(tilted, rest, 0).matrix;
     const b = projectEye(tilted, rest, 1).matrix;
     expect(a[2]).not.toBeCloseTo(b[2], 3);
+  });
+
+  it("clamps the pitch at 80°, so looking straight up still has a basis", () => {
+    const at = (pitch: number, index: 0 | 1) =>
+      projectEye(rig, { ...rest, gaze: { yaw: 0, pitch } }, index).matrix;
+    const width = (matrix: readonly number[]) => Math.hypot(matrix[0]!, matrix[1]!);
+    for (const index of [0, 1] as const) {
+      // At 90° the up-vector cross product degenerates; 80° is the clamped value.
+      expect(at(90, index)).toEqual(at(80, index));
+      expect(at(-90, index)).toEqual(at(-80, index));
+      expect(width(at(90, index))).toBeGreaterThan(0);
+      // The clamp only bites at the limit: a legal pitch still projects.
+      expect(at(70, index)).not.toEqual(at(80, index));
+    }
   });
 
   it("is a pure function of its inputs", () => {
