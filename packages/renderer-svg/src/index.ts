@@ -277,14 +277,20 @@ function renderSphere(
 
   let capsules = "";
   for (const index of [0, 1] as const) {
-    const [a, b, c, d, e, f] = projectEye(rig, eyePose, index).matrix.map(number);
+    const projected = projectEye(rig, eyePose, index);
+    // Depth is the sphere normal's z. Between the two thresholds the eye fades; below
+    // the cull depth it is dropped entirely rather than drawn at zero opacity.
+    const alpha = (projected.depth - rig.cullAtDepth) / (rig.fadeFromDepth - rig.cullAtDepth);
+    if (alpha <= 0) continue;
+    const [a, b, c, d, e, f] = projected.matrix.map(number);
+    const opacity = alpha < 1 ? ` opacity="${alpha.toFixed(3)}"` : "";
     // A unit capsule: the matrix already carries the half-extents, the tilt and the
     // centre, so the rect must not repeat them. `rx="1"` on a 2×2 rect is a full
     // semicircle end, which survives the anisotropic scale the projection applies.
     capsules +=
       `<rect x="-1" y="-1" width="2" height="2" rx="1"` +
       ` transform="matrix(${a} ${b} ${c} ${d} ${e} ${f})"` +
-      ` fill="${escapeAttribute(geometry.ink.eyes)}" />`;
+      ` fill="${escapeAttribute(geometry.ink.eyes)}"${opacity} />`;
   }
 
   return (

@@ -459,6 +459,40 @@ describe("sphere rig", () => {
     expect(working).toMatch(/<g transform="rotate\(20\)"><g class="[^"]*-body">/);
   });
 
+  /** The same geometry at a chosen gaze yaw, rendered idle. */
+  const looking = (yaw: number) =>
+    renderGeometry(
+      { ...geometry, pose: { gaze: { yaw, pitch: 0 }, lidOpen: 1 } },
+      { size: 96 },
+    );
+
+  it("keeps both eyes fully opaque while the far eye still faces the viewer", () => {
+    const svg = looking(45);
+    expect(rects(svg)).toHaveLength(2);
+    // depth 0.454 at yaw 45 is well above fadeFromDepth, so alpha clamps to 1 and no
+    // attribute is emitted at all: opacity="1" would be noise.
+    expect(svg).not.toContain('opacity="');
+  });
+
+  it("fades the far eye only inside the rig's depth band", () => {
+    // The far eye's normal is yaw + 18° from the viewer: 86° at yaw 68, depth 0.0698,
+    // so alpha = (0.0698 − 0.02) / (0.12 − 0.02) = 0.498.
+    const elements = rects(looking(68));
+    expect(elements).toHaveLength(2);
+    expect(attribute(elements[0]!, "opacity")).toBe("");
+    expect(Number(attribute(elements[1]!, "opacity"))).toBeCloseTo(0.498, 3);
+  });
+
+  it("culls the far eye once its normal passes the cull depth", () => {
+    // At yaw 85 the far normal is 103°, already behind the sphere, so the capsule is
+    // dropped rather than drawn transparent. The near eye stays fully opaque.
+    for (const yaw of [85, 95]) {
+      const elements = rects(looking(yaw));
+      expect(elements).toHaveLength(1);
+      expect(attribute(elements[0]!, "opacity")).toBe("");
+    }
+  });
+
   it("still renders a rect rig byte for byte as before", () => {
     const rectSpec = buildAvatarSpec(organicBlob, "alice");
     expect(renderGeometry(buildGeometry(organicBlob, "alice"), { size: 96 })).toBe(
