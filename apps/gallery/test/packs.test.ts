@@ -55,6 +55,7 @@ describe("orb demo pack", () => {
     expect(orbEyes.eyes[1]).toEqual({ ...orbEyes.eyes[0], lateralDeg: -18, tiltDeg: 6 });
     expect(orbEyes.fadeFromDepth).toBeGreaterThan(0);
     expect(orbEyes.cullAtDepth).toBeLessThan(orbEyes.fadeFromDepth);
+    expect(orbEyes.bodyCoupling).toBe(0.35);
   });
 
   it("reuses organic-blob's bodies, colours, clips and durations", () => {

@@ -23,6 +23,7 @@ const spherePack = {
     ],
     fadeFromDepth: 0.12,
     cullAtDepth: 0.02,
+    bodyCoupling: 0.35,
   },
 } as unknown as StylePack;
 
@@ -44,6 +45,7 @@ describe("buildGeometry", () => {
     expect(geometry.rig.eyes).toEqual(spherePack.eyes.eyes);
     expect(geometry.rig.fadeFromDepth).toBe(0.12);
     expect(geometry.rig.cullAtDepth).toBe(0.02);
+    expect(geometry.rig.bodyCoupling).toBe(0.35);
   });
 
   it("starts a sphere rig at rest, so the first frame is a straight gaze", () => {

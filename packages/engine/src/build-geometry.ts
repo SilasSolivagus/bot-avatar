@@ -35,6 +35,7 @@ export function buildGeometry(pack: StylePack, identity: string): AvatarGeometry
       eyes: rig.eyes,
       fadeFromDepth: rig.fadeFromDepth,
       cullAtDepth: rig.cullAtDepth,
+      bodyCoupling: rig.bodyCoupling,
     },
     pose: { gaze: { yaw: 0, pitch: 0 }, lidOpen: 1 },
   };

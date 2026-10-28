@@ -36,6 +36,12 @@ export interface SphereEyeRig {
   ];
   fadeFromDepth: number;
   cullAtDepth: number;
+  /**
+   * 注视转动里由"头"承担的比例，0–1。0 是只动眼睛（v1 观感），1 是只转头。
+   * 渲染器把总 yaw 拆成两半：group 转 `yaw × coupling`，投影用 `yaw × (1 − coupling)`。
+   * 只转 group 而不降投影 yaw 会让眼睛相对脸多转一遍。
+   */
+  bodyCoupling: number;
 }
 
 export type EyeRig = RectEyeRig | SphereEyeRig;

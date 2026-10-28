@@ -20,6 +20,9 @@ export const orbEyes: SphereEyeRig = {
   ],
   fadeFromDepth: 0.12,
   cullAtDepth: 0.02,
+  // 0.35 is enough for the slider to read as a head turn at ±45 (≈16° of body),
+  // while the eyes still carry most of the gaze and keep their capsule shape.
+  bodyCoupling: 0.35,
 };
 
 export const orb: StylePack = {

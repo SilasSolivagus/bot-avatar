@@ -77,11 +77,23 @@ describe("the orb pack through the geometry path", () => {
     // Eye 1 sits at lateral -18: it is the far one when the gaze goes to +yaw.
     expect(right[1]!).toBeLessThan(right[0]!);
     expect(left[0]!).toBeLessThan(left[1]!);
-    // The far eye narrows hard; the near eye keeps almost all of its width.
-    expect(right[1]! / rest[1]!).toBeLessThan(0.65);
-    expect(right[0]! / rest[0]!).toBeGreaterThan(0.85);
-    expect(left[0]! / rest[0]!).toBeLessThan(0.65);
-    expect(left[1]! / rest[1]!).toBeGreaterThan(0.85);
+    // The pack couples 35% of the turn to the body, so the eyes see 26° of the 40:
+    // the far eye keeps ~76% of its width and the near eye gains ~4%.
+    expect(right[1]! / rest[1]!).toBeCloseTo(0.76, 2);
+    expect(right[0]! / rest[0]!).toBeCloseTo(1.041, 2);
+    expect(left[0]! / rest[0]!).toBeCloseTo(0.76, 2);
+    expect(left[1]! / rest[1]!).toBeCloseTo(1.041, 2);
+  });
+
+  it("turns the body by the pack's coupling, and not at all at rest", () => {
+    const geometry = buildGeometry(orb, "alice");
+    expect(renderGeometry(geometry, { size: 160 })).not.toContain("rotate(");
+    const turned = renderGeometry(
+      poseGeometry(geometry, { gaze: { yaw: 40, pitch: 0 }, lidOpen: 1 }),
+      { size: 160 },
+    );
+    // 35% of 40 is 14: this is the field that makes the slider read as a head turn.
+    expect(turned).toContain('<g transform="rotate(14)">');
   });
 
   it("tilts both eyes the other way at +20 and -20 pitch", () => {

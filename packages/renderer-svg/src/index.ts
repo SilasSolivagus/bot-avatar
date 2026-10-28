@@ -85,6 +85,8 @@ function number(value: number): string {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
 /** The fields the working animation reads; `AvatarSpec` and `AvatarGeometry` both carry them. */
 type Animation = Pick<AvatarSpec, "clip" | "durationMs" | "motionAmplitude">;
 
@@ -261,9 +263,21 @@ function renderSphere(
     smoothingPasses: geometry.body.smoothingPasses,
   });
 
+  // Body coupling splits the *same* total yaw between head and eyes: the group takes
+  // `yaw × coupling`, the projection keeps `yaw × (1 − coupling)`. Rotating the group
+  // without shrinking the projected yaw would turn the eyes twice. A coupling of 0
+  // (or a zero turn) must emit no wrapper at all, so today's bytes are untouched.
+  const coupling = Number.isFinite(rig.bodyCoupling) ? clamp01(rig.bodyCoupling) : 0;
+  const turn = number(geometry.pose.gaze.yaw * coupling);
+  const turned = turn !== "0";
+  const eyePose = {
+    ...geometry.pose,
+    gaze: { ...geometry.pose.gaze, yaw: geometry.pose.gaze.yaw * (1 - coupling) },
+  };
+
   let capsules = "";
   for (const index of [0, 1] as const) {
-    const [a, b, c, d, e, f] = projectEye(rig, geometry.pose, index).matrix.map(number);
+    const [a, b, c, d, e, f] = projectEye(rig, eyePose, index).matrix.map(number);
     // A unit capsule: the matrix already carries the half-extents, the tilt and the
     // centre, so the rect must not repeat them. `rx="1"` on a 2×2 rect is a full
     // semicircle end, which survives the anisotropic scale the projection applies.
@@ -278,11 +292,15 @@ function renderSphere(
     ` width="${pixels}" height="${pixels}" aria-hidden="true">` +
     (working ? workingStyle(geometry, id) : "") +
     `<defs>${inkGradient(geometry, id)}</defs>` +
+    // The turn wraps the animated body group rather than sharing it: the working
+    // keyframes set `transform`, and a static transform on the same element loses.
+    (turned ? `<g transform="rotate(${turn})">` : "") +
     `<g${working ? ` class="${id}-body"` : ""}>` +
     `<path d="${escapeAttribute(path)}" fill="url(#${id}-fill)" />` +
     // The eyes live inside the body group, so head motion carries them as it does today.
     `<g${working ? ` class="${id}-eyes"` : ""}>${capsules}</g>` +
     `</g>` +
+    (turned ? `</g>` : "") +
     `</svg>`
   );
 }

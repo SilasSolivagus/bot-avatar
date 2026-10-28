@@ -218,6 +218,9 @@ const orbPack = {
     ],
     fadeFromDepth: 0.12,
     cullAtDepth: 0.02,
+    // The gallery's value. The renderer must not assume a default, and the existing
+    // sphere assertions predate the split, so the fixture starts un-coupled.
+    bodyCoupling: 0,
   },
 } as never;
 
@@ -379,6 +382,81 @@ describe("sphere rig", () => {
     expect(working.indexOf("-body")).toBeLessThan(working.indexOf("-eyes"));
     const eyes = working.match(/<g class="[^"]*-eyes">(.*?)<\/g>/)?.[1] ?? "";
     expect((eyes.match(/<rect/g) ?? [])).toHaveLength(2);
+  });
+
+  /** The same geometry with a chosen body coupling and gaze yaw, rendered idle. */
+  const coupled = (bodyCoupling: number, yaw: number) =>
+    renderGeometry(
+      {
+        ...geometry,
+        rig: { ...rig, bodyCoupling },
+        pose: { gaze: { yaw, pitch: 0 }, lidOpen: 1 },
+      },
+      { size: 96 },
+    );
+
+  it("emits no rotate group when the computed turn is zero", () => {
+    // Coupling zero is today's output; coupling anything at rest is rest too. Neither
+    // may grow a wrapper group, or the un-coupled bytes would change.
+    for (const svg of [coupled(0, 40), coupled(0.5, 0), coupled(1, 0)]) {
+      expect(svg).not.toContain("rotate(");
+      expect(svg).not.toContain("<g transform=");
+    }
+  });
+
+  it("puts the coupled share of the same total yaw on the group", () => {
+    expect(coupled(0.5, 40)).toContain('<g transform="rotate(20)">');
+    expect(coupled(1, 40)).toContain('<g transform="rotate(40)">');
+    expect(coupled(0.5, -40)).toContain('<g transform="rotate(-20)">');
+  });
+
+  it("does not turn the eyes twice: the projection uses the reduced yaw", () => {
+    // The head carries 20 and the projection carries 20. If the projection kept the
+    // full 40, these matrices would equal coupled(0, 40) instead.
+    expect(matrix(rects(coupled(0.5, 40))[0]!)).toEqual(matrix(rects(coupled(0, 20))[0]!));
+    expect(matrix(rects(coupled(0.5, 40))[1]!)).toEqual(matrix(rects(coupled(0, 20))[1]!));
+  });
+
+  it("leaves the eyes at rest when the head carries the whole turn", () => {
+    expect(rects(coupled(1, 40)).map(matrix)).toEqual(rects(coupled(0, 0)).map(matrix));
+  });
+
+  it("projects the near eye at the reduced yaw, not the full one", () => {
+    // Width belongs to the projection frame, so splitting the turn between head and
+    // eyes changes it; what must stay put is the total. The double-turn bug — project
+    // the full yaw and still rotate the body — would leave the width at yaw 40.
+    expect(drawnWidth(rects(coupled(0.5, 40))[0]!)).toBeCloseTo(
+      drawnWidth(rects(coupled(0, 20))[0]!),
+      6,
+    );
+    expect(drawnWidth(rects(coupled(1, 40))[0]!)).toBeCloseTo(
+      drawnWidth(rects(coupled(0, 0))[0]!),
+      6,
+    );
+    // At 20° the near eye faces the viewer more squarely than at 40°, so the correct
+    // split widens it a little. A full-yaw projection would keep it at the 40° width.
+    expect(drawnWidth(rects(coupled(0.5, 40))[0]!)).toBeGreaterThan(
+      drawnWidth(rects(coupled(0, 40))[0]!),
+    );
+  });
+
+  it("clamps the coupling between 0 and 1, so a pack cannot over- or under-turn", () => {
+    expect(coupled(1.4, 40)).toBe(coupled(1, 40));
+    expect(coupled(-0.4, 40)).toBe(coupled(0, 40));
+  });
+
+  it("keeps the head turn outside the animated body group", () => {
+    const working = renderGeometry(
+      {
+        ...geometry,
+        rig: { ...rig, bodyCoupling: 0.5 },
+        pose: { gaze: { yaw: 40, pitch: 0 }, lidOpen: 1 },
+      },
+      { size: 96, state: "working" },
+    );
+    // The body group's CSS animation owns its `transform`; a static transform on the
+    // same element would be overwritten while working, so the turn needs its own group.
+    expect(working).toMatch(/<g transform="rotate\(20\)"><g class="[^"]*-body">/);
   });
 
   it("still renders a rect rig byte for byte as before", () => {

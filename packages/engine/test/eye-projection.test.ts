@@ -12,6 +12,7 @@ const rig: SphereEyeRig = {
   ],
   fadeFromDepth: 0.12,
   cullAtDepth: 0.02,
+  bodyCoupling: 0,
 };
 
 const rest: Pose = { gaze: { yaw: 0, pitch: 0 }, lidOpen: 1 };
