@@ -561,6 +561,61 @@ describe("sphere rig", () => {
     }
   });
 
+  describe("surface eye paint", () => {
+    const surfaceGeometry = { ...geometry, rig: { ...rig, eyePaint: "surface" as const } };
+
+    it("fills the capsules with the surface colour and strokes them with it", () => {
+      const drawn = capsules(renderGeometry(surfaceGeometry, { size: 96, surfaceColour: "#0B0B0C" }));
+      expect(drawn).toHaveLength(2);
+      for (const capsule of drawn) {
+        expect(attribute(capsule.rect, "fill")).toBe("#0B0B0C");
+        expect(attribute(capsule.rect, "stroke")).toBe("#0B0B0C");
+        // 8% of the capsule's short axis (its drawn width), floored at 0.5 viewBox units.
+        const strokeWidth = Number(attribute(capsule.rect, "stroke-width"));
+        expect(strokeWidth).toBeCloseTo(Math.max(0.5, capsule.width * 0.08), 2);
+        expect(strokeWidth).toBeGreaterThanOrEqual(0.5);
+      }
+    });
+
+    it("floors the stroke at 0.5 viewBox units for a tiny capsule", () => {
+      const tiny = {
+        ...surfaceGeometry,
+        rig: {
+          ...surfaceGeometry.rig,
+          eyes: [
+            { ...surfaceGeometry.rig.eyes[0], halfWidth: 1 },
+            { ...surfaceGeometry.rig.eyes[1], halfWidth: 1 },
+          ] as SphereEyeRig["eyes"],
+        },
+      };
+      const drawn = capsules(renderGeometry(tiny, { size: 96, surfaceColour: "#0B0B0C" }));
+      for (const capsule of drawn) {
+        // 8% of ~1.9 would be ~0.15; the floor wins.
+        expect(attribute(capsule.rect, "stroke-width")).toBe("0.5");
+      }
+    });
+
+    it("throws when the surface colour is missing, naming the option", () => {
+      expect(() => renderGeometry(surfaceGeometry, { size: 96 })).toThrow(/surfaceColour/);
+      expect(() => renderGeometry(surfaceGeometry, { size: 96, surfaceColour: "" })).toThrow(
+        /surfaceColour/,
+      );
+    });
+
+    it("keeps explicit ink paint byte-identical to the default and adds no stroke", () => {
+      const ink = { ...geometry, rig: { ...rig, eyePaint: "ink" as const } };
+      for (const size of [48, 96]) {
+        // The default (no `eyePaint`) is the bytes before this change.
+        expect(renderGeometry(ink, { size })).toBe(renderGeometry(geometry, { size }));
+        // A surface colour supplied to an ink pack is ignored, stroke included.
+        expect(renderGeometry(ink, { size, surfaceColour: "#0B0B0C" })).toBe(
+          renderGeometry(geometry, { size }),
+        );
+      }
+      expect(renderGeometry(ink, { size: 96, surfaceColour: "#0B0B0C" })).not.toContain("stroke=");
+    });
+  });
+
   it("still renders a rect rig byte for byte as before", () => {
     const rectSpec = buildAvatarSpec(organicBlob, "alice");
     expect(renderGeometry(buildGeometry(organicBlob, "alice"), { size: 96 })).toBe(

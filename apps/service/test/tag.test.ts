@@ -34,6 +34,7 @@ describe("avatarTag", () => {
     expect(avatarTag({ ...base, identity: "bob" })).not.toBe(tag);
     expect(avatarTag({ ...base, size: 64 })).not.toBe(tag);
     expect(avatarTag({ ...base, state: "working" })).not.toBe(tag);
+    expect(avatarTag({ ...base, surface: "#0b0b0c" })).not.toBe(tag);
     expect(avatarTag({ ...base, packHash: "b".repeat(64) })).not.toBe(tag);
   });
 });

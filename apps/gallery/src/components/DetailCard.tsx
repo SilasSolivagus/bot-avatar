@@ -3,6 +3,7 @@ import { renderGeometry } from "@botavatar/svg";
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { gazeFromPointer, poseGeometry, REST_POSE } from "../pose.js";
+import { GALLERY_SURFACE } from "../surface.js";
 
 type Motion = "idle" | "working";
 type CopyState = "idle" | "copied" | "fallback";
@@ -37,7 +38,14 @@ function pngHref(
 ): string | null {
   const base = serviceBase(service);
   if (base === null) return null;
-  const query = new URLSearchParams({ pack: geometry.packId, size: String(size), state });
+  // `bg` carries the card's surface to the service: a cut-out pack refuses to render
+  // without it, and the PNG must match the SVG shown above.
+  const query = new URLSearchParams({
+    pack: geometry.packId,
+    size: String(size),
+    state,
+    bg: GALLERY_SURFACE,
+  });
   return `${base}/v1/avatar/${encodeURIComponent(geometry.identity)}.png?${query.toString()}`;
 }
 
@@ -120,7 +128,9 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
   // the wall keeps rendering the same object, unchanged. A pointer over the card
   // replaces the sliders' gaze while it is there; leaving restores the sliders.
   const posed = poseGeometry(geometry, { gaze: follow ?? gaze, lidOpen });
-  const svg = renderGeometry(posed, { size, state: motion });
+  // The card paints `GALLERY_SURFACE` behind the art; a cut-out eye must be told the
+  // same colour or it would show a hole to a surface that is not there.
+  const svg = renderGeometry(posed, { size, state: motion, surfaceColour: GALLERY_SURFACE });
   const png = pngHref(service, geometry, size, motion);
   const sphere = geometry.rig.kind === "sphere";
   const following = follow !== null;
@@ -191,7 +201,11 @@ export function DetailCard({ geometry, size, service }: DetailCardProps) {
       <p className="muted detail-caption notranslate" translate="no">
         #{geometry.family} · look #{geometry.look} · {geometry.ink.bodyName}
       </p>
-      <div className="detail-art" dangerouslySetInnerHTML={{ __html: svg }} />
+      <div
+        className="detail-art"
+        style={{ background: GALLERY_SURFACE }}
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
 
       <div className="detail-actions">
         <button type="button" className="action" onClick={copySvg}>

@@ -35,6 +35,15 @@ export interface RectEyeRig {
  */
 export interface SphereEyeRig {
   kind: "sphere";
+  /**
+   * What the capsules are filled with. `"ink"` (the default) is the palette's eye
+   * colour, so existing packs keep their bytes. `"surface"` fills each capsule with
+   * the host surface's colour and strokes it in the same colour, which makes the eye
+   * read as a cut-out while the avatar stays opaque
+   * (`docs/design/2026-10-28-eye-cutout.md`). The surface colour is a render option,
+   * not pack data: the caller knows what it is painting on.
+   */
+  eyePaint?: "surface" | "ink";
   sphereRadius: number;
   eyes: readonly [
     { lateralDeg: number; verticalDeg: number; halfWidth: number; halfHeight: number; tiltDeg: number },

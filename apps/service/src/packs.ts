@@ -235,6 +235,11 @@ function assertSphereEyes(eyes: Record<string, unknown>, origin: string): void {
     const value = expectFiniteNumber(eyes[field], origin, `eyes.${field}`);
     if (value < 0 || value > 1) fail(origin, `eyes.${field}`, "must be within [0, 1]");
   }
+  // The paint choice changes what the renderer needs (a surface colour), so an
+  // unknown value must fail here rather than reach the renderer.
+  if (eyes.eyePaint !== undefined && eyes.eyePaint !== "surface" && eyes.eyePaint !== "ink") {
+    fail(origin, "eyes.eyePaint", 'must be "surface" or "ink"');
+  }
   for (const field of ["anchorY", "restTiltDeg"] as const) {
     if (eyes[field] === undefined) continue;
     expectFiniteNumber(eyes[field], origin, `eyes.${field}`);

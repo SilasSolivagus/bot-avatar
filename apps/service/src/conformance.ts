@@ -33,6 +33,13 @@ const SPHERE_POSES: readonly Pose[] = [
 ];
 /** A sphere combination costs one render per pose, so it buys fewer combinations. */
 const MAX_SPHERE_COMBINATIONS = Math.floor(MAX_RENDERS / SPHERE_POSES.length);
+/**
+ * The surface colour the startup sweep paints on. A pack may paint its eyes with the
+ * surface colour, and that colour is a render option rather than pack data, so the
+ * sweep supplies a fixed valid one. It is never served; it only lets the pack prove
+ * that its geometry renders.
+ */
+const CONFORMANCE_SURFACE = "#000000";
 /** Emitted numbers are rounded to three decimals; this absorbs that and the fit margin. */
 const FIT_TOLERANCE = 0.5;
 /** Two drawn centres closer than this are the same point in viewBox units. */
@@ -387,7 +394,10 @@ function assertSpherePackRenders(pack: StylePack, origin: string): ConformanceRe
       const where = `${origin}: family ${family} colour ${color} pose ${poseIndex}`;
       let svg: string;
       try {
-        svg = renderGeometry({ ...geometry, pose }, { size: RENDER_SIZE });
+        svg = renderGeometry(
+          { ...geometry, pose },
+          { size: RENDER_SIZE, surfaceColour: CONFORMANCE_SURFACE },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new PackError(`${where} failed to render (${message})`);

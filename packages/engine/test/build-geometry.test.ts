@@ -98,4 +98,22 @@ describe("buildGeometry", () => {
   it("is deterministic", () => {
     expect(buildGeometry(spherePack, "alice")).toEqual(buildGeometry(spherePack, "alice"));
   });
+
+  it("carries the pack's eyePaint into the rig, defaulting to ink", () => {
+    const plain = buildGeometry(spherePack, "alice");
+    if (plain.rig.kind !== "sphere") throw new Error("unreachable");
+    // Absent means every existing pack keeps the ink default.
+    expect(plain.rig.eyePaint).toBeUndefined();
+
+    const surfacePack = {
+      ...spherePack,
+      eyes: {
+        ...(spherePack.eyes as unknown as Record<string, unknown>),
+        eyePaint: "surface",
+      },
+    } as unknown as StylePack;
+    const surface = buildGeometry(surfacePack, "alice");
+    if (surface.rig.kind !== "sphere") throw new Error("unreachable");
+    expect(surface.rig.eyePaint).toBe("surface");
+  });
 });

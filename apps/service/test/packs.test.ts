@@ -418,6 +418,10 @@ describe("parsePack sphere eyes", () => {
     rejects({ bodyPitchFollow: 1.5 }, /eyes\.bodyPitchFollow/);
   });
 
+  it("rejects an unknown eye paint, naming eyes.eyePaint", () => {
+    rejects({ eyePaint: "paint" }, /eyes\.eyePaint must be "surface" or "ink"/);
+  });
+
   it("rejects a non-finite optional anchor, naming eyes.anchorY", () => {
     rejects({ anchorY: Number.NaN }, /eyes\.anchorY/);
   });

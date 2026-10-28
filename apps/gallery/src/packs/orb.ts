@@ -12,6 +12,8 @@ import { motion, palette, shapes } from "@botavatar/pack-organic-blob";
  */
 export const orbEyes: SphereEyeRig = {
   kind: "sphere",
+  // Cut-out eyes: the capsules are filled with each card's surface colour.
+  eyePaint: "surface",
   sphereRadius: 44,
   // Placeholders: `buildGeometry` overrides `lateralDeg`, `halfWidth`, `halfHeight`
   // and `tiltDeg` with values derived from the body outline (`deriveFace`), plus

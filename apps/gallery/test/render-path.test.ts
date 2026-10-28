@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { buildAvatarSpec, buildGeometry, projectEye, radiusAtAngle } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
-import { renderGeometry, renderSvg } from "@botavatar/svg";
+import { renderGeometry as renderOnSurface, renderSvg } from "@botavatar/svg";
 import { clay } from "../src/packs/clay.js";
 import { orb } from "../src/packs/orb.js";
 import { poseGeometry, gazeFromPointer } from "../src/pose.js";
+import { GALLERY_SURFACE } from "../src/surface.js";
+
+/**
+ * The gallery always paints its cards with {@link GALLERY_SURFACE}, and the art, orb
+ * and geo packs cut their eyes out of that colour, so every render here supplies it.
+ * The rect packs ignore it and stay byte-identical.
+ */
+const renderGeometry: typeof renderOnSurface = (geometry, options) =>
+  renderOnSurface(geometry, { surfaceColour: GALLERY_SURFACE, ...options });
 
 const IDENTITIES = ["alice", "bot_123", "wall-3-0", "research"];
 
@@ -322,5 +331,16 @@ describe("pointer follow: the head and the eyes share one gaze", () => {
     expect(rest).not.toContain('<g transform="translate(0,');
     expect(rest).not.toMatch(/<g transform="rotate\(/);
     expect(capsules(rest)).toHaveLength(2);
+  });
+});
+
+describe("cut-out eyes on the gallery surface", () => {
+  it("fills and strokes every orb capsule with the card's colour", () => {
+    const svg = galleryRender(orb, "alice");
+    expect(capsules(svg)).toHaveLength(2);
+    // Both capsules carry the surface paint, and the same colour strokes the gap wider.
+    expect(svg.match(new RegExp(`fill="${GALLERY_SURFACE}"`, "g"))).toHaveLength(2);
+    expect(svg.match(new RegExp(`stroke="${GALLERY_SURFACE}"`, "g"))).toHaveLength(2);
+    expect(svg.match(/stroke-width="[0-9.]+"/g)).toHaveLength(2);
   });
 });

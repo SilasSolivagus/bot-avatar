@@ -16,6 +16,13 @@ export interface TagInput {
    */
   kind?: TagKind;
   /**
+   * The surface colour the avatar is drawn on. A pack that paints its eyes with the
+   * surface colour produces different bytes for every value, so it must be part of
+   * the cache key. Absent hashes as the empty string, keeping a `bg`-less request on
+   * a distinct tag from any explicit colour.
+   */
+  surface?: string;
+  /**
    * The renderer build fingerprint. A renderer change can alter the bytes of an
    * avatar without changing the pack, the identity or the options, so the build
    * is part of the cache key: an upgrade invalidates every cached avatar once.
@@ -25,8 +32,9 @@ export interface TagInput {
 
 /**
  * Opaque cache tag: a hash over hashes. The pack content hash, the identity hash,
- * the render options, the representation kind and the renderer build are the only
- * inputs, so no pack or identity text can appear in the result.
+ * the render options (including the surface colour), the representation kind and the
+ * renderer build are the only inputs, so no pack or identity text can appear in the
+ * result.
  */
 export function avatarTag({
   packHash,
@@ -34,10 +42,14 @@ export function avatarTag({
   size,
   state,
   kind = "svg",
+  surface = "",
   renderBuild,
 }: TagInput): string {
   const digest = createHash("sha256")
-    .update(`${packHash}|${identityHash(identity)}|${size}|${state}|${kind}|${renderBuild}`, "utf8")
+    .update(
+      `${packHash}|${identityHash(identity)}|${size}|${state}|${kind}|${renderBuild}|${surface}`,
+      "utf8",
+    )
     .digest("hex")
     .slice(0, 16);
   return `"${digest}"`;

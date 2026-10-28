@@ -7,6 +7,7 @@ import { createApp, parseIdentity } from "../src/app.js";
 import { RENDER_BUILD } from "../src/build-id.js";
 import { builtinPacks, parsePack } from "../src/packs.js";
 import { packContentHash } from "../src/pack-hash.js";
+import { spherePack } from "./sphere-pack.js";
 
 // Count calls without changing the hash: the real implementation still runs.
 vi.mock("../src/pack-hash.js", async (importOriginal) => {
@@ -438,5 +439,68 @@ describe("a cache hit renders nothing", () => {
     });
     expect(second.status).toBe(304);
     expect(build).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("surface-painted eyes and ?bg", () => {
+  // A sphere pack that asks for the cut-out paint, validated exactly like a served pack.
+  const surfacePack = () => parsePack(spherePack({ eyes: { eyePaint: "surface" } }), "surface-pack");
+  const surfaceApp = createApp({ packs: [surfacePack()], logger: () => {} });
+  const errorOf = async (res: Response) =>
+    (await res.json()) as { error: { code: string; message: string } };
+
+  it("renders a surface pack when bg supplies the colour", async () => {
+    const res = await surfaceApp.request("/v1/avatar/alice.svg?bg=%230b0b0c");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('fill="#0b0b0c"');
+    expect(body).toContain('stroke="#0b0b0c"');
+  });
+
+  it("rejects a surface pack with no bg, naming bg", async () => {
+    const res = await surfaceApp.request("/v1/avatar/alice.svg");
+    expect(res.status).toBe(400);
+    const { error } = await errorOf(res);
+    expect(error.code).toBe("bad_bg");
+    expect(error.message).toContain("bg");
+    expect(error.message).toContain("surface");
+  });
+
+  it("gives two bg values different etags", async () => {
+    const dark = await surfaceApp.request("/v1/avatar/alice.svg?bg=%230b0b0c");
+    const light = await surfaceApp.request("/v1/avatar/alice.svg?bg=%23ffffff");
+    expect(dark.status).toBe(200);
+    expect(light.status).toBe(200);
+    expect(dark.headers.get("etag")).toBeTruthy();
+    expect(light.headers.get("etag")).not.toBe(dark.headers.get("etag"));
+    // The two bodies really differ: the tag is not covering an identical render.
+    expect(await dark.text()).not.toBe(await light.text());
+  });
+
+  it("rejects a bg that is not #rgb or #rrggbb", async () => {
+    for (const value of ["red", "%23ff00", "%23ggg", "rgb(0,0,0)", "%23fff%20"]) {
+      const res = await surfaceApp.request(`/v1/avatar/alice.svg?bg=${value}`);
+      expect(res.status, value).toBe(400);
+      const { error } = await errorOf(res);
+      expect(error.code, value).toBe("bad_bg");
+      expect(error.message, value).toContain("bg");
+    }
+  });
+
+  it("accepts a short #rgb value", async () => {
+    const res = await surfaceApp.request("/v1/avatar/alice.svg?bg=%23abc");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('fill="#abc"');
+  });
+
+  it("requires bg on the json route too, then returns the geometry", async () => {
+    const res = await surfaceApp.request("/v1/avatar/alice.json");
+    expect(res.status).toBe(400);
+    // JSON still paints nothing, but the route contract asks for bg first; an explicit
+    // bg then returns the geometry.
+    const ok = await surfaceApp.request("/v1/avatar/alice.json?bg=%230b0b0c");
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { rig: { kind: string } };
+    expect(body.rig.kind).toBe("sphere");
   });
 });

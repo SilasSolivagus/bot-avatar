@@ -3,6 +3,7 @@ import { avatarAssignableLooks, buildGeometry } from "@botavatar/engine";
 import { renderGeometry } from "@botavatar/svg";
 import { useMemo } from "react";
 import { balance, distinctness, wallIdentities } from "../metrics.js";
+import { GALLERY_SURFACE } from "../surface.js";
 
 export interface WallProps {
   pack: StylePack;
@@ -30,7 +31,11 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
   const looks = useMemo(() => avatarAssignableLooks(pack.shapes), [pack]);
   const result = useMemo(() => balance(geometries, looks), [geometries, looks]);
   const cells = useMemo(
-    () => geometries.map((geometry) => ({ geometry, svg: renderGeometry(geometry, { size }) })),
+    () =>
+      geometries.map((geometry) => ({
+        geometry,
+        svg: renderGeometry(geometry, { size, surfaceColour: GALLERY_SURFACE }),
+      })),
     [geometries, size],
   );
 
@@ -41,7 +46,10 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
   const stripSize = stripSizeFor(size);
   const stripCells = useMemo(
     () =>
-      strip.map((geometry) => ({ geometry, svg: renderGeometry(geometry, { size: stripSize }) })),
+      strip.map((geometry) => ({
+        geometry,
+        svg: renderGeometry(geometry, { size: stripSize, surfaceColour: GALLERY_SURFACE }),
+      })),
     [strip, stripSize],
   );
   const spread = useMemo(() => distinctness(strip), [strip]);
@@ -87,6 +95,7 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
             key={geometry.identity}
             type="button"
             className="cell"
+            style={{ background: GALLERY_SURFACE }}
             aria-pressed={selected === geometry.identity}
             aria-label={`${geometry.identity}: family ${geometry.family}, look ${geometry.look}, ${geometry.ink.bodyName}`}
             title={`${geometry.identity}\n#${geometry.family} · look #${geometry.look} · ${geometry.ink.bodyName}`}
@@ -120,6 +129,7 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
               key={geometry.identity}
               type="button"
               className="strip-cell"
+              style={{ background: GALLERY_SURFACE }}
               aria-pressed={selected === geometry.identity}
               aria-label={`${geometry.identity}: family ${geometry.family}, look ${geometry.look}, ${geometry.ink.bodyName}`}
               title={`${geometry.identity}\n#${geometry.family} · look #${geometry.look} · ${geometry.ink.bodyName}`}

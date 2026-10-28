@@ -58,6 +58,9 @@ export function buildGeometry(pack: StylePack, identity: string): AvatarGeometry
     ...geometry,
     rig: {
       kind: "sphere",
+      // The paint choice is a pack decision, carried through unchanged; the surface
+      // colour it needs is a render option, supplied by whoever knows the background.
+      eyePaint: rig.eyePaint,
       sphereRadius: rig.sphereRadius,
       eyes: derived,
       fadeFromDepth: rig.fadeFromDepth,

@@ -42,11 +42,18 @@ interface RenderOptions {
 
 规则：
 
-- `eyePaint === "surface"` 且未提供 `surfaceColour` → **抛错**，不做默认值。猜一个背景色会污染缓存（ETag 不含它）。
+- `eyePaint === "surface"` 且未提供 `surfaceColour` → **抛错**，不做默认值：渲染器无法知道所在表面，猜一个只会把眼睛画成"非抠洞"。
 - 服务端 `?bg=` 参数映射到 `surfaceColour`；缺省且 pack 用 surface 时返回 400，消息说明需要 `bg`。
 - 画廊把卡片的实际背景色传进去。
 
 ## 4. 我们自己的选择（非抄来的）
 
-- 描边宽度：参考实现是 6（单位未说明，推测是 viewBox 单位）。我们按眼睛尺寸的 8% 取，写进 pack。
+- 描边宽度：参考实现是 6（单位未说明，推测是 viewBox 单位）。我们取胶囊短轴（绘制宽度 2 × halfWidth）的 **8%**，下限 0.5 viewBox 单位，描边与填充同色。
 - 不引入主题令牌系统：我们只有一个 `surfaceColour` 参数，由宿主决定传什么。
+
+## 5. 实现落点
+
+- 服务端 `?bg=` 只接受 `#rgb` / `#rrggbb`；`bg` 进入 SVG/PNG 的 ETag 输入（JSON 不绘制，沿用固定哨兵）。
+- 启动校验：`eyes.eyePaint` 只接受 `"surface"` / `"ink"`，其它值在 `parsePack` 阶段点名字段拒绝。
+- 画廊的墙格、单图条与详情卡统一绘制 `#0b0f14` 表面，并把同一颜色传给渲染器。
+

@@ -174,6 +174,9 @@ export const artPalette: readonly PaletteColor[] = [
  */
 export const artEyes: SphereEyeRig = {
   kind: "sphere",
+  // Cut-out eyes: the capsules take the card's surface colour, so an avatar reads as
+  // a hole in its own card on any background.
+  eyePaint: "surface",
   sphereRadius: 44,
   eyes: [
     { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },

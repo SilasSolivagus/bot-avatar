@@ -74,6 +74,8 @@ export const geoShapes: readonly ShapeFamily[] = [
  */
 export const geoEyes: SphereEyeRig = {
   kind: "sphere",
+  // Cut-out eyes: the capsules are filled with each card's surface colour.
+  eyePaint: "surface",
   sphereRadius: 44,
   eyes: [
     { lateralDeg: 0, verticalDeg: 0, halfWidth: 0, halfHeight: 0, tiltDeg: 0 },

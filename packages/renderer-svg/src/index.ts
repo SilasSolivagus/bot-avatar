@@ -10,6 +10,13 @@ import type {
 export interface RenderOptions {
   size: number;
   state?: "idle" | "working";
+  /**
+   * The colour of the surface the avatar is drawn on. Required when the pack paints
+   * its eyes with the surface colour (`SphereEyeRig.eyePaint === "surface"`), unused
+   * otherwise. It is deliberately not defaulted: the renderer cannot know the
+   * surface, and a made-up colour would paint an eye that is not a cut-out.
+   */
+  surfaceColour?: string;
 }
 
 export interface AvatarRenderer<Out> {
@@ -285,6 +292,21 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
 }
 
 /**
+ * The surface colour a cut-out eye must use. Missing means the caller forgot it;
+ * guessing one would paint an eye that does not match the surface it sits on, and
+ * the renderer has no way to know which surface that is.
+ */
+function requiredSurfaceColour(value: string | undefined): string {
+  if (value === undefined || value === "") {
+    throw new Error(
+      'renderGeometry: the pack paints its eyes with the surface colour (eyePaint "surface"), ' +
+        "so options.surfaceColour is required",
+    );
+  }
+  return value;
+}
+
+/**
  * The sphere rig draws itself: no `AvatarSpec` can express it, since `AvatarSpec.eyes`
  * only holds rects. The body comes from the geometry, the eyes from `projectEye`, and
  * the gradient from the ink.
@@ -302,13 +324,17 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
 function renderSphere(
   geometry: AvatarGeometry,
   rig: SphereEyeRig,
-  { size, state = "idle" }: RenderOptions,
+  { size, state = "idle", surfaceColour }: RenderOptions,
 ): string {
   // The sphere branch paints an ink-only gradient. Refuse rather than silently drop
   // material a pack asked for: a surfaced sphere pack must not render flat unnoticed.
   if (geometry.surface) {
     throw new Error("renderGeometry: sphere rigs do not support surface material yet");
   }
+  // The eye paint is checked before any eye is projected: a pack that asks for the
+  // surface colour must fail loudly even when both eyes happen to be culled.
+  const eyePaint = rig.eyePaint === "surface" ? "surface" : "ink";
+  const eyeFill = eyePaint === "surface" ? requiredSurfaceColour(surfaceColour) : geometry.ink.eyes;
   const pixels = Math.max(1, Math.round(size));
   const working = state === "working";
   const id = geometryId(geometry);
@@ -373,11 +399,20 @@ function renderSphere(
     const cx = number(fitted.x);
     const cy = number(fitted.y);
     const opacity = alpha < 1 ? ` opacity="${alpha.toFixed(3)}"` : "";
+    // The cut-out gap is widened with a stroke in the same colour as the fill. Our
+    // rule, not the reference's (which uses a flat `stroke-width: 6` with no stated
+    // units): 8% of the capsule's short axis — the drawn width — floored at 0.5
+    // viewBox units so a tiny eye still separates from its body. Scaling keeps the
+    // gap proportional when the projection foreshortens the eye.
+    const stroke =
+      eyePaint === "surface"
+        ? ` stroke="${escapeAttribute(eyeFill)}" stroke-width="${number(Math.max(0.5, halfWidth * 2 * 0.08))}"`
+        : "";
     capsules +=
       `<g transform="translate(${cx},${cy}) rotate(${number(angle)})">` +
       `<rect x="${number(-halfWidth)}" y="${number(-halfLength)}"` +
       ` width="${number(halfWidth * 2)}" height="${number(halfLength * 2)}"` +
-      ` rx="${number(halfWidth)}" fill="${escapeAttribute(geometry.ink.eyes)}"${opacity} />` +
+      ` rx="${number(halfWidth)}" fill="${escapeAttribute(eyeFill)}"${stroke}${opacity} />` +
       `</g>`;
   }
 
