@@ -157,7 +157,9 @@ renderSvg(spec: AvatarSpec, options: { size: number; state?: "idle" | "working" 
 
 A pack is data: shapes, a palette, eye geometry, durations, and the material the renderer may use. Writing one does not touch the engine.
 
-A pack does not specify eye size: for a sphere pack the face is derived from the body outline (`deriveFace`), so the pack only chooses the sphere radius, the depth band and the coupling.
+A pack does not specify eye size: for a sphere pack the face is derived from the body profile (`deriveFace`), so the pack only chooses the sphere radius, the depth band and the coupling.
+
+Shapes are 64-sample radius profiles (`radii`), and a sphere pack can omit eye sizes because they are derived from the profile.
 
 ```ts
 import type { StylePack } from "@botavatar/engine";
@@ -190,7 +192,7 @@ export const geometric: StylePack = {
 Three rules a pack must keep:
 
 1. **Deterministic.** No randomness, no clocks; the pack is data and pure functions only.
-2. **`outline` is a closed polygon** in the pack's `viewBox`, origin at the centre.
+2. **A shape is a closed `outline` polygon or a 64-sample `radii` profile**, in the pack's `viewBox`, origin at the centre; exactly one of the two.
 3. **`reserved: true`** marks bodies a new identity must never be handed (an existing hash may still land on one), and `look` merges bodies that look the same.
 
 ### Material
