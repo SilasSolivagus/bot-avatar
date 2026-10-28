@@ -1,6 +1,6 @@
-import type { AvatarSpec, StylePack } from "@botavatar/engine";
-import { avatarAssignableLooks, buildAvatarSpec } from "@botavatar/engine";
-import { renderSvg } from "@botavatar/svg";
+import type { StylePack } from "@botavatar/engine";
+import { avatarAssignableLooks, buildGeometry } from "@botavatar/engine";
+import { renderGeometry } from "@botavatar/svg";
 import { useMemo } from "react";
 import { balance, distinctness, wallIdentities } from "../metrics.js";
 
@@ -17,31 +17,37 @@ function stripSizeFor(size: number): number {
   return Math.max(64, Math.min(size, 128));
 }
 
+/**
+ * Every cell goes through `buildGeometry` + `renderGeometry`. For a `rect` pack that
+ * is byte-identical to `renderSvg`, and for a sphere pack (the orb) it is the only
+ * path that can draw the eyes at all — one path, both rigs.
+ */
 export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
-  const specs = useMemo(
-    () => ids.map((identity) => buildAvatarSpec(pack, identity)),
+  const geometries = useMemo(
+    () => ids.map((identity) => buildGeometry(pack, identity)),
     [ids, pack],
   );
   const looks = useMemo(() => avatarAssignableLooks(pack.shapes), [pack]);
-  const result = useMemo(() => balance(specs, looks), [specs, looks]);
+  const result = useMemo(() => balance(geometries, looks), [geometries, looks]);
   const cells = useMemo(
-    () => specs.map((spec) => ({ spec, svg: renderSvg(spec, { size }) })),
-    [specs, size],
+    () => geometries.map((geometry) => ({ geometry, svg: renderGeometry(geometry, { size }) })),
+    [geometries, size],
   );
 
   const strip = useMemo(
-    () => wallIdentities(pack, looks.length).map((identity) => buildAvatarSpec(pack, identity)),
+    () => wallIdentities(pack, looks.length).map((identity) => buildGeometry(pack, identity)),
     [pack, looks],
   );
   const stripSize = stripSizeFor(size);
   const stripCells = useMemo(
-    () => strip.map((spec) => ({ spec, svg: renderSvg(spec, { size: stripSize }) })),
+    () =>
+      strip.map((geometry) => ({ geometry, svg: renderGeometry(geometry, { size: stripSize }) })),
     [strip, stripSize],
   );
   const spread = useMemo(() => distinctness(strip), [strip]);
   const balanceLabel =
     `${result.ok ? "Balanced" : "Unbalanced"}: busiest look max ${result.max}, ` +
-    `allowed ${result.allowed}, across ${specs.length} identities and ${looks.length} assignable looks.` +
+    `allowed ${result.allowed}, across ${geometries.length} identities and ${looks.length} assignable looks.` +
     (result.missing.length > 0
       ? ` Missing looks: ${result.missing.map((look) => `#${look}`).join(", ")}.`
       : "") +
@@ -57,7 +63,7 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
           max {result.max} vs allowed {result.allowed}
         </span>
         <span className="balance-detail notranslate" translate="no">
-          {specs.length} identities across {looks.length} assignable looks
+          {geometries.length} identities across {looks.length} assignable looks
         </span>
         {result.missing.length > 0 && (
           <span className="balance-detail notranslate" translate="no">
@@ -76,19 +82,19 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
         className="wall"
         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${size}px, 100%), 1fr))` }}
       >
-        {cells.map(({ spec, svg }) => (
+        {cells.map(({ geometry, svg }) => (
           <button
-            key={spec.identity}
+            key={geometry.identity}
             type="button"
             className="cell"
-            aria-pressed={selected === spec.identity}
-            aria-label={`${spec.identity}: family ${spec.family}, look ${spec.look}, ${spec.color.name}`}
-            title={`${spec.identity}\n#${spec.family} · look #${spec.look} · ${spec.color.name}`}
-            onClick={() => onSelect(spec.identity)}
+            aria-pressed={selected === geometry.identity}
+            aria-label={`${geometry.identity}: family ${geometry.family}, look ${geometry.look}, ${geometry.ink.bodyName}`}
+            title={`${geometry.identity}\n#${geometry.family} · look #${geometry.look} · ${geometry.ink.bodyName}`}
+            onClick={() => onSelect(geometry.identity)}
           >
             <span className="cell-art" dangerouslySetInnerHTML={{ __html: svg }} />
             <span className="cell-caption notranslate" translate="no">
-              #{spec.family} · look #{spec.look} · {spec.color.name}
+              #{geometry.family} · look #{geometry.look} · {geometry.ink.bodyName}
             </span>
           </button>
         ))}
@@ -109,19 +115,19 @@ export function Wall({ pack, ids, size, selected, onSelect }: WallProps) {
           </p>
         </div>
         <div className="strip-row">
-          {stripCells.map(({ spec, svg }) => (
+          {stripCells.map(({ geometry, svg }) => (
             <button
-              key={spec.identity}
+              key={geometry.identity}
               type="button"
               className="strip-cell"
-              aria-pressed={selected === spec.identity}
-              aria-label={`${spec.identity}: family ${spec.family}, look ${spec.look}, ${spec.color.name}`}
-              title={`${spec.identity}\n#${spec.family} · look #${spec.look} · ${spec.color.name}`}
-              onClick={() => onSelect(spec.identity)}
+              aria-pressed={selected === geometry.identity}
+              aria-label={`${geometry.identity}: family ${geometry.family}, look ${geometry.look}, ${geometry.ink.bodyName}`}
+              title={`${geometry.identity}\n#${geometry.family} · look #${geometry.look} · ${geometry.ink.bodyName}`}
+              onClick={() => onSelect(geometry.identity)}
             >
               <span className="cell-art" dangerouslySetInnerHTML={{ __html: svg }} />
               <span className="cell-caption notranslate" translate="no">
-                look #{spec.look} · {spec.color.name}
+                look #{geometry.look} · {geometry.ink.bodyName}
               </span>
             </button>
           ))}

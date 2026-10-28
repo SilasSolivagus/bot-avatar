@@ -1,29 +1,37 @@
-import type { AvatarSpec, StylePack } from "@botavatar/engine";
+import type { StylePack } from "@botavatar/engine";
 import { avatarAssignableLooks, avatarFamily, avatarLook, avatarSeed } from "@botavatar/engine";
 
-/** How many specs wear each look. */
-export function lookCounts(specs: readonly AvatarSpec[]): ReadonlyMap<number, number> {
+/**
+ * The one thing these metrics need from a rendered avatar. The wall now holds
+ * `AvatarGeometry` rather than `AvatarSpec`, and both wear a `look`.
+ */
+export interface LookBearing {
+  look: number;
+}
+
+/** How many avatars wear each look. */
+export function lookCounts(avatars: readonly LookBearing[]): ReadonlyMap<number, number> {
   const counts = new Map<number, number>();
-  for (const spec of specs) counts.set(spec.look, (counts.get(spec.look) ?? 0) + 1);
+  for (const avatar of avatars) counts.set(avatar.look, (counts.get(avatar.look) ?? 0) + 1);
   return counts;
 }
 
 /**
- * Whether a wall spreads its specs as evenly as the pack allows. `assignableLooks`
+ * Whether a wall spreads its avatars as evenly as the pack allows. `assignableLooks`
  * is the pack's list of looks, not the wall's: `missing` is measured against what
  * the pack can produce, so a wall that skips a look cannot look balanced.
  *
- * A spec whose look is not in `assignableLooks` wears a reserved look (a pasted
+ * An avatar whose look is not in `assignableLooks` wears a reserved look (a pasted
  * identity whose hash landed there). It is outside the assignment pool, so it is
  * counted in `reserved` and left out of `max`, `allowed` and `missing`: containing
  * a legitimate reserved identity must not make the assignable wall look unbalanced.
  */
 export function balance(
-  specs: readonly AvatarSpec[],
+  avatars: readonly LookBearing[],
   assignableLooks: readonly number[],
 ): { ok: boolean; max: number; allowed: number; missing: number[]; reserved: number } {
   const assignable = new Set(assignableLooks);
-  const assigned = specs.filter((spec) => assignable.has(spec.look));
+  const assigned = avatars.filter((avatar) => assignable.has(avatar.look));
   const counts = lookCounts(assigned);
   const allowed = Math.ceil(assigned.length / Math.max(1, assignableLooks.length));
   const max = Math.max(0, ...counts.values());
@@ -33,18 +41,18 @@ export function balance(
     max,
     allowed,
     missing,
-    reserved: specs.length - assigned.length,
+    reserved: avatars.length - assigned.length,
   };
 }
 
-/** The share of specs that repeat a look someone else already wears. */
-export function distinctness(specs: readonly AvatarSpec[]): {
+/** The share of avatars that repeat a look someone else already wears. */
+export function distinctness(avatars: readonly LookBearing[]): {
   distinct: number;
   total: number;
   rate: number;
 } {
-  const distinct = new Set(specs.map((spec) => spec.look)).size;
-  const total = specs.length;
+  const distinct = new Set(avatars.map((avatar) => avatar.look)).size;
+  const total = avatars.length;
   return { distinct, total, rate: total === 0 ? 0 : (total - distinct) / total };
 }
 

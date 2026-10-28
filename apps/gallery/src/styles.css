@@ -393,6 +393,42 @@ textarea:focus-visible {
   margin-top: 14px;
 }
 
+.gaze-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.gaze-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.gaze-name {
+  min-width: 4ch;
+}
+
+.gaze-control input[type="range"] {
+  width: 104px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.gaze-value {
+  min-width: 3ch;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .motion-toggle {
   display: flex;
   gap: 6px;

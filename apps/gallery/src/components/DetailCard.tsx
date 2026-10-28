@@ -1,12 +1,13 @@
-import type { AvatarSpec } from "@botavatar/engine";
-import { renderSvg } from "@botavatar/svg";
+import type { AvatarGeometry, Pose } from "@botavatar/engine";
+import { renderGeometry } from "@botavatar/svg";
 import { useEffect, useRef, useState } from "react";
+import { poseGeometry, REST_POSE } from "../pose.js";
 
 type Motion = "idle" | "working";
 type CopyState = "idle" | "copied" | "fallback";
 
 export interface DetailCardProps {
-  spec: AvatarSpec | null;
+  geometry: AvatarGeometry | null;
   size: number;
   service: string;
 }
@@ -27,23 +28,62 @@ export function serviceBase(raw: string): string | null {
  * The gallery never rasterises: the PNG link points at the service, which owns
  * the native dependency. No service URL means no link, not a broken one.
  */
-function pngHref(service: string, spec: AvatarSpec, size: number, state: Motion): string | null {
+function pngHref(
+  service: string,
+  geometry: AvatarGeometry,
+  size: number,
+  state: Motion,
+): string | null {
   const base = serviceBase(service);
   if (base === null) return null;
-  const query = new URLSearchParams({ pack: spec.packId, size: String(size), state });
-  return `${base}/v1/avatar/${encodeURIComponent(spec.identity)}.png?${query.toString()}`;
+  const query = new URLSearchParams({ pack: geometry.packId, size: String(size), state });
+  return `${base}/v1/avatar/${encodeURIComponent(geometry.identity)}.png?${query.toString()}`;
 }
 
-export function DetailCard({ spec, size, service }: DetailCardProps) {
+interface GazeSliderProps {
+  name: "yaw" | "pitch";
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+}
+
+/**
+ * One gaze axis. The name and the number are technical, so the whole control is
+ * marked `translate="no"`: a page translator must not turn "-40°" into words.
+ */
+function GazeSlider({ name, min, max, value, onChange }: GazeSliderProps) {
+  return (
+    <label className="gaze-control notranslate" translate="no">
+      <span className="gaze-name">{name}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        aria-label={`gaze ${name}, degrees`}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+      />
+      <span className="gaze-value">{value}°</span>
+    </label>
+  );
+}
+
+export function DetailCard({ geometry, size, service }: DetailCardProps) {
   const [motion, setMotion] = useState<Motion>("idle");
   const [copyState, setCopyState] = useState<CopyState>("idle");
+  const [gaze, setGaze] = useState<Pose["gaze"]>(REST_POSE.gaze);
+  const [lidOpen, setLidOpen] = useState(REST_POSE.lidOpen);
   const fallback = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<number | undefined>(undefined);
-  const identity = spec?.identity ?? "";
+  const identity = geometry?.identity ?? "";
 
   useEffect(() => {
     setMotion("idle");
     setCopyState("idle");
+    setGaze({ ...REST_POSE.gaze });
+    setLidOpen(REST_POSE.lidOpen);
   }, [identity]);
 
   useEffect(
@@ -59,17 +99,21 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
     fallback.current?.select();
   }, [copyState]);
 
-  if (!spec) {
+  if (!geometry) {
     return (
       <section className="detail panel" aria-label="Identity detail">
         <h2>Detail</h2>
-        <p className="muted">Click a cell on the wall to inspect its identity, spec and SVG.</p>
+        <p className="muted">Click a cell on the wall to inspect its identity, geometry and SVG.</p>
       </section>
     );
   }
 
-  const svg = renderSvg(spec, { size, state: motion });
-  const png = pngHref(service, spec, size, motion);
+  // The sliders are a pose on top of the identity's geometry, never a second avatar:
+  // the wall keeps rendering the same object, unchanged.
+  const posed = poseGeometry(geometry, { gaze, lidOpen });
+  const svg = renderGeometry(posed, { size, state: motion });
+  const png = pngHref(service, geometry, size, motion);
+  const sphere = geometry.rig.kind === "sphere";
 
   const copySvg = async () => {
     try {
@@ -88,7 +132,7 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${spec.identity}.svg`;
+    anchor.download = `${geometry.identity}.svg`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -100,11 +144,11 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
       <div className="detail-head">
         <h2>Detail</h2>
         <span className="detail-id notranslate" translate="no">
-          {spec.identity}
+          {geometry.identity}
         </span>
       </div>
       <p className="muted detail-caption notranslate" translate="no">
-        #{spec.family} · look #{spec.look} · {spec.color.name}
+        #{geometry.family} · look #{geometry.look} · {geometry.ink.bodyName}
       </p>
       <div className="detail-art" dangerouslySetInnerHTML={{ __html: svg }} />
 
@@ -119,7 +163,7 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
           <a
             className="action"
             href={png}
-            download={`${spec.identity}.png`}
+            download={`${geometry.identity}.png`}
             target="_blank"
             rel="noreferrer"
             title={png}
@@ -147,6 +191,37 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
         </p>
       )}
 
+      {/* A `rect` rig ignores the pose, so these controls would be dead levers there. */}
+      {sphere && (
+        <div className="gaze-row" role="group" aria-label="Gaze">
+          <span className="field-label">Gaze</span>
+          <GazeSlider
+            name="yaw"
+            min={-45}
+            max={45}
+            value={gaze.yaw}
+            onChange={(yaw) => setGaze({ ...gaze, yaw })}
+          />
+          <GazeSlider
+            name="pitch"
+            min={-30}
+            max={30}
+            value={gaze.pitch}
+            onChange={(pitch) => setGaze({ ...gaze, pitch })}
+          />
+          <button
+            type="button"
+            className="chip notranslate"
+            translate="no"
+            aria-pressed={lidOpen !== 1}
+            title="render with lidOpen 0.1"
+            onClick={() => setLidOpen(lidOpen === 1 ? 0.1 : 1)}
+          >
+            blink
+          </button>
+        </div>
+      )}
+
       <div className="motion-row">
         <span className="field-label">Motion</span>
         <div className="motion-toggle" role="group" aria-label="Motion state">
@@ -167,7 +242,7 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
             <>
               animating{" "}
               <span translate="no" className="notranslate">
-                {spec.durationMs}ms
+                {geometry.durationMs}ms
               </span>
             </>
           ) : (
@@ -193,7 +268,9 @@ export function DetailCard({ spec, size, service }: DetailCardProps) {
         </div>
       )}
 
-      <pre className="spec-json notranslate" translate="no">{JSON.stringify(spec, null, 2)}</pre>
+      <pre className="spec-json notranslate" translate="no">
+        {JSON.stringify(posed, null, 2)}
+      </pre>
     </section>
   );
 }

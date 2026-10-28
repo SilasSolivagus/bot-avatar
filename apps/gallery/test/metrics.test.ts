@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec } from "@botavatar/engine";
+import { avatarAssignableLooks, buildGeometry } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
-import { avatarAssignableLooks } from "@botavatar/engine";
 import { balance, distinctness, lookCounts, wallIdentities } from "../src/metrics.js";
 
 const looks = avatarAssignableLooks(organicBlob.shapes);
-const specsOf = (ids: readonly string[]) => ids.map((id) => buildAvatarSpec(organicBlob, id));
+/** The wall holds geometry now; these metrics only read its `look`. */
+const avatarsOf = (ids: readonly string[]) => ids.map((id) => buildGeometry(organicBlob, id));
 
 describe("lookCounts and balance", () => {
   it("balances 40 generated identities within the pigeonhole bound", () => {
-    const specs = specsOf(wallIdentities(organicBlob, 40));
-    const counts = lookCounts(specs);
+    const avatars = avatarsOf(wallIdentities(organicBlob, 40));
+    const counts = lookCounts(avatars);
     expect(counts.size).toBe(looks.length);
-    const result = balance(specs, looks);
+    const result = balance(avatars, looks);
     expect(result.ok).toBe(true);
     expect(result.max).toBeLessThanOrEqual(result.allowed);
     expect(result.missing).toEqual([]);
@@ -21,14 +21,14 @@ describe("lookCounts and balance", () => {
 
   it("rejects an unbalanced set", () => {
     // One identity repeated: a single look, so most assignable looks are missing.
-    const specs = specsOf(Array.from({ length: 12 }, () => "alice"));
-    expect(balance(specs, looks).ok).toBe(false);
+    const avatars = avatarsOf(Array.from({ length: 12 }, () => "alice"));
+    expect(balance(avatars, looks).ok).toBe(false);
   });
 
   it("counts a reserved identity without counting it in the assignable balance", () => {
-    const specs = specsOf([...wallIdentities(organicBlob, looks.length), "dave"]);
-    expect(specs.at(-1)?.look).toBe(6);
-    expect(balance(specs, looks)).toMatchObject({
+    const avatars = avatarsOf([...wallIdentities(organicBlob, looks.length), "dave"]);
+    expect(avatars.at(-1)?.look).toBe(6);
+    expect(balance(avatars, looks)).toMatchObject({
       ok: true,
       max: 1,
       allowed: 1,
@@ -38,9 +38,9 @@ describe("lookCounts and balance", () => {
   });
 
   it("stays balanced when several identities wear the reserved look", () => {
-    const specs = specsOf([...wallIdentities(organicBlob, looks.length), "dave", "oscar", "tom"]);
-    expect(specs.filter((spec) => spec.look === 6)).toHaveLength(3);
-    expect(balance(specs, looks)).toMatchObject({
+    const avatars = avatarsOf([...wallIdentities(organicBlob, looks.length), "dave", "oscar", "tom"]);
+    expect(avatars.filter((avatar) => avatar.look === 6)).toHaveLength(3);
+    expect(balance(avatars, looks)).toMatchObject({
       ok: true,
       max: 1,
       allowed: 1,
@@ -53,13 +53,13 @@ describe("lookCounts and balance", () => {
 describe("distinctness", () => {
   it("finds one distinct look per assignable look", () => {
     const ids = wallIdentities(organicBlob, looks.length);
-    const result = distinctness(specsOf(ids));
+    const result = distinctness(avatarsOf(ids));
     expect(result.distinct).toBe(looks.length);
     expect(result.rate).toBe(0);
   });
 
   it("reports duplicates honestly", () => {
-    const result = distinctness(specsOf(Array.from({ length: 9 }, () => "alice")));
+    const result = distinctness(avatarsOf(Array.from({ length: 9 }, () => "alice")));
     expect(result.distinct).toBe(1);
     expect(result.rate).toBeCloseTo(8 / 9, 5);
   });

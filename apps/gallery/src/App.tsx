@@ -1,4 +1,4 @@
-import { avatarAssignableLooks, buildAvatarSpec } from "@botavatar/engine";
+import { avatarAssignableLooks, buildGeometry } from "@botavatar/engine";
 import { useEffect, useMemo, useState } from "react";
 import { DetailCard } from "./components/DetailCard.js";
 import { IdentityInput } from "./components/IdentityInput.js";
@@ -98,7 +98,9 @@ export function App() {
   };
 
   const detailSize = Math.min(320, Math.max(200, Math.round(state.size * 1.5)));
-  const selectedSpec = selected === null ? null : buildAvatarSpec(pack, selected);
+  // Geometry, not a spec: a sphere pack has no v1 `rotation`, and `renderGeometry`
+  // is the one path both rigs share.
+  const selectedGeometry = selected === null ? null : buildGeometry(pack, selected);
 
   return (
     <main className="app">
@@ -140,7 +142,7 @@ export function App() {
         </section>
 
         <aside className="detail-panel">
-          <DetailCard spec={selectedSpec} size={detailSize} service={service} />
+          <DetailCard geometry={selectedGeometry} size={detailSize} service={service} />
         </aside>
       </div>
     </main>
