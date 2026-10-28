@@ -1,6 +1,19 @@
-import type { AvatarSpec, PaletteColor, ShapeFamily, StylePack } from "@botavatar/engine";
-import { outlinePath, phaseForSeed } from "@botavatar/engine";
-import { renderSvg } from "@botavatar/svg";
+import type {
+  AvatarGeometry,
+  AvatarSpec,
+  PaletteColor,
+  Pose,
+  ShapeFamily,
+  StylePack,
+} from "@botavatar/engine";
+import {
+  avatarSampleIdentity,
+  buildGeometry,
+  outlinePath,
+  phaseForSeed,
+  radiusAtAngle,
+} from "@botavatar/engine";
+import { renderGeometry, renderSvg } from "@botavatar/svg";
 import { PackError } from "./pack-error.js";
 
 /** A pack may not cost more than this many renders to validate at startup. */
@@ -9,6 +22,20 @@ const RENDER_SIZE = 32;
 const STATES = ["idle", "working"] as const;
 /** The render cap counted in `(shape, colour)` combinations, each rendered once per state. */
 const MAX_COMBINATIONS = Math.floor(MAX_RENDERS / STATES.length);
+/** The poses a sphere rig must survive: rest, both yaw extremes and both pitch extremes. */
+const SPHERE_POSES: readonly Pose[] = [
+  { gaze: { yaw: 0, pitch: 0 }, lidOpen: 1 },
+  { gaze: { yaw: -44, pitch: 0 }, lidOpen: 1 },
+  { gaze: { yaw: 44, pitch: 0 }, lidOpen: 1 },
+  { gaze: { yaw: 0, pitch: 25 }, lidOpen: 1 },
+  { gaze: { yaw: 0, pitch: -25 }, lidOpen: 1 },
+];
+/** A sphere combination costs one render per pose, so it buys fewer combinations. */
+const MAX_SPHERE_COMBINATIONS = Math.floor(MAX_RENDERS / SPHERE_POSES.length);
+/** Emitted numbers are rounded to three decimals; this absorbs that and the fit margin. */
+const FIT_TOLERANCE = 0.5;
+/** Two drawn centres closer than this are the same point in viewBox units. */
+const CENTRE_EPSILON = 1e-3;
 /** Substrings that mean a number or an object leaked into the markup instead of a value. */
 const BAD_OUTPUT = ["NaN", "undefined", "Infinity", "[object Object]"] as const;
 /** Context around a bad token, so the error names the offending fragment rather than a line. */
@@ -177,6 +204,20 @@ function assertUsableSvg(svg: string, where: string): void {
   }
 }
 
+/** The index ranges `selected` could not reach, given the full domain. */
+function uncoveredFor(
+  selected: readonly Combo[],
+  shapeCount: number,
+  colorCount: number,
+): UncoveredDimensions {
+  const coveredShapes = [...new Set(selected.map(({ family }) => family))].sort((a, b) => a - b);
+  const coveredColors = [...new Set(selected.map(({ color }) => color))].sort((a, b) => a - b);
+  return {
+    shapes: complementRanges(coveredShapes, shapeCount),
+    colors: complementRanges(coveredColors, colorCount),
+  };
+}
+
 /**
  * Renders every body and every colour this pack can produce, in both states. A pack
  * that only breaks on one family or one colour fails here, at startup, instead of
@@ -187,7 +228,7 @@ function assertUsableSvg(svg: string, where: string): void {
  * of sampling silently. The sample covers every shape and every colour whenever that
  * dimension fits the budget; `uncovered` names the index ranges it could not reach.
  */
-export function assertPackRenders(pack: StylePack, origin: string): ConformanceResult {
+function assertRectPackRenders(pack: StylePack, origin: string): ConformanceResult {
   const shapeCount = pack.shapes.length;
   const colorCount = pack.palette.length;
   const sampled = shapeCount * colorCount > MAX_COMBINATIONS;
@@ -221,14 +262,151 @@ export function assertPackRenders(pack: StylePack, origin: string): ConformanceR
     }
   }
 
-  const coveredShapes = [...new Set(selected.map(({ family }) => family))].sort((a, b) => a - b);
-  const coveredColors = [...new Set(selected.map(({ color }) => color))].sort((a, b) => a - b);
   return {
     rendered,
     sampled,
-    uncovered: {
-      shapes: complementRanges(coveredShapes, shapeCount),
-      colors: complementRanges(coveredColors, colorCount),
-    },
+    uncovered: uncoveredFor(selected, shapeCount, colorCount),
   };
+}
+
+interface DrawnCapsule {
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Reads the capsules the sphere branch emits: one rect inside a
+ * `translate(...) rotate(...)` group. The pattern is anchored to that exact
+ * shape, so no other element can be mistaken for an eye.
+ */
+function drawnCapsules(svg: string): DrawnCapsule[] {
+  return [
+    ...svg.matchAll(
+      /<g transform="translate\(([^,]+),([^)]+)\) rotate\(([^)]+)\)"><rect ([^>]*?)\s*\/><\/g>/g,
+    ),
+  ].map((match) => {
+    const rect = match[4]!;
+    const attribute = (name: string): number =>
+      Number(new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(rect)?.[1] ?? "");
+    return {
+      cx: Number(match[1]),
+      cy: Number(match[2]),
+      width: attribute("width"),
+      height: attribute("height"),
+    };
+  });
+}
+
+/**
+ * Every drawn capsule must stay inside the outline it is painted on. The centre is
+ * the capsule's own place, and `max(halfWidth, halfLength)` bounds the capsule for
+ * every rotation, so the sum is an outer edge that `radiusAtAngle` can compare with
+ * the silhouette in the same direction.
+ */
+function assertCapsulesInside(
+  outline: AvatarGeometry["body"]["outline"],
+  capsules: readonly DrawnCapsule[],
+  where: string,
+): void {
+  for (const capsule of capsules) {
+    const radius = radiusAtAngle(outline, Math.atan2(capsule.cy, capsule.cx));
+    const outer =
+      Math.hypot(capsule.cx, capsule.cy) + Math.max(capsule.width, capsule.height) / 2;
+    if (outer > radius + FIT_TOLERANCE) {
+      throw new PackError(
+        `${where} capsule at (${capsule.cx}, ${capsule.cy}) escapes the body outline: ` +
+          `outer edge ${outer.toFixed(3)} > radius ${radius.toFixed(3)}`,
+      );
+    }
+  }
+}
+
+/**
+ * At an extreme yaw the two eyes must still be two distinct points on the face.
+ * A culled eye is legal, so only a drawn pair is compared: a rig whose spacing has
+ * collapsed to zero draws both capsules on top of each other and reads as one eye.
+ */
+function assertCentresDistinct(capsules: readonly DrawnCapsule[], where: string): void {
+  if (capsules.length !== 2) return;
+  const [first, second] = capsules;
+  const distance = Math.hypot(first.cx - second.cx, first.cy - second.cy);
+  if (distance <= CENTRE_EPSILON) {
+    throw new PackError(
+      `${where} the two eye centres coincide at (${first.cx}, ${first.cy})`,
+    );
+  }
+}
+
+/**
+ * The sphere sweep: every family and colour in the five poses, through the geometry
+ * path. A sphere pack cannot go through `buildAvatarSpec` (its eye block has no v1
+ * `rotation`), so the body is built with `buildGeometry` and the palette entry is
+ * folded into the ink, exactly as `toGeometry` does for a spec.
+ */
+function assertSpherePackRenders(pack: StylePack, origin: string): ConformanceResult {
+  const shapeCount = pack.shapes.length;
+  const colorCount = pack.palette.length;
+  const sampled = shapeCount * colorCount > MAX_SPHERE_COMBINATIONS;
+  const selected: Combo[] = [];
+  if (sampled) {
+    selected.push(...selectCombinations(shapeCount, colorCount, MAX_SPHERE_COMBINATIONS));
+  } else {
+    for (let family = 0; family < shapeCount; family++) {
+      for (let color = 0; color < colorCount; color++) selected.push({ family, color });
+    }
+  }
+  const rendered = selected.length * SPHERE_POSES.length;
+
+  const byFamily = new Map<number, AvatarGeometry>();
+  for (const { family, color } of selected) {
+    let base = byFamily.get(family);
+    if (!base) {
+      base = buildGeometry(pack, avatarSampleIdentity(pack, family));
+      byFamily.set(family, base);
+    }
+    const entry = pack.palette[color]!;
+    const geometry: AvatarGeometry = {
+      ...base,
+      ink: {
+        body: entry.light,
+        bodyHighlight: entry.dark,
+        eyes: entry.eye,
+        bodyId: entry.id,
+        bodyName: entry.name,
+      },
+    };
+    for (const [poseIndex, pose] of SPHERE_POSES.entries()) {
+      const where = `${origin}: family ${family} colour ${color} pose ${poseIndex}`;
+      let svg: string;
+      try {
+        svg = renderGeometry({ ...geometry, pose }, { size: RENDER_SIZE });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new PackError(`${where} failed to render (${message})`);
+      }
+      assertUsableSvg(svg, where);
+      const capsules = drawnCapsules(svg);
+      assertCapsulesInside(geometry.body.outline, capsules, where);
+      if (pose.gaze.yaw !== 0) assertCentresDistinct(capsules, where);
+    }
+  }
+
+  return {
+    rendered,
+    sampled,
+    uncovered: uncoveredFor(selected, shapeCount, colorCount),
+  };
+}
+
+/**
+ * The startup proof for a pack. `rect` packs keep the v1 spec sweep; sphere packs
+ * sweep families, colours and poses through the geometry renderer, because their
+ * eye block cannot be expressed as an `AvatarSpec`.
+ */
+export function assertPackRenders(pack: StylePack, origin: string): ConformanceResult {
+  const kind = (pack.eyes as unknown as { kind?: unknown }).kind;
+  if (kind === "sphere") return assertSpherePackRenders(pack, origin);
+  return assertRectPackRenders(pack, origin);
 }

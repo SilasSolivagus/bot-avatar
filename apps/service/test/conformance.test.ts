@@ -3,6 +3,7 @@ import type { StylePack } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { assertPackRenders } from "../src/conformance.js";
 import { PackError } from "../src/packs.js";
+import { spherePackAsStylePack } from "./sphere-pack.js";
 
 /**
  * A synthetic pack with the requested dimensions. Shapes and colours repeat the
@@ -187,5 +188,56 @@ describe("assertPackRenders", () => {
     expect(() => assertPackRenders(crowded, "wide-stride")).toThrow(
       new RegExp(`family ${lastFamily}`),
     );
+  });
+});
+
+describe("assertPackRenders sphere packs", () => {
+  it("sweeps every family and colour in the five sphere poses", () => {
+    const result = assertPackRenders(spherePackAsStylePack({ shapes: 2, colors: 3 }), "sphere");
+    expect(result.sampled).toBe(false);
+    expect(result.rendered).toBe(2 * 3 * 5);
+    expect(result.uncovered).toEqual({ shapes: [], colors: [] });
+  });
+
+  it("names family, colour and pose when a sphere render leaks a sentinel", () => {
+    const pack = spherePackAsStylePack({ shapes: 2, colors: 2 });
+    (pack.palette[0] as { eye: unknown }).eye = "undefined";
+    expect(() => assertPackRenders(pack, "/tmp/sphere-sentinel.ts")).toThrow(PackError);
+    expect(() => assertPackRenders(pack, "/tmp/sphere-sentinel.ts")).toThrow(
+      /family 0 colour 0 pose 0/,
+    );
+  });
+
+  it("rejects a sphere pack whose capsule escapes the silhouette", () => {
+    const pack = spherePackAsStylePack({ shapes: 1, colors: 1 });
+    (pack.shapes[0] as { outline: unknown }).outline = [
+      [20, 20],
+      [40, 20],
+      [40, 40],
+      [20, 40],
+    ];
+    expect(() => assertPackRenders(pack, "/tmp/sphere-escape.ts")).toThrow(PackError);
+    expect(() => assertPackRenders(pack, "/tmp/sphere-escape.ts")).toThrow(
+      /family 0 colour 0 pose 0/,
+    );
+    expect(() => assertPackRenders(pack, "/tmp/sphere-escape.ts")).toThrow(/outline/);
+  });
+
+  it("rejects a sphere pack whose eyes coincide at extreme yaw", () => {
+    // The radius is positive, but so small that both projected centres round to
+    // the same drawn point: a rig with no visible separation at all.
+    const pack = spherePackAsStylePack({ shapes: 1, colors: 1, eyes: { sphereRadius: 0.001 } });
+    expect(() => assertPackRenders(pack, "/tmp/sphere-coincide.ts")).toThrow(PackError);
+    expect(() => assertPackRenders(pack, "/tmp/sphere-coincide.ts")).toThrow(
+      /family 0 colour 0 pose 1/,
+    );
+    expect(() => assertPackRenders(pack, "/tmp/sphere-coincide.ts")).toThrow(/coincide/);
+  });
+
+  it("samples a sphere sweep above the render cap and says so", () => {
+    const result = assertPackRenders(spherePackAsStylePack({ shapes: 41, colors: 6 }), "big-sphere");
+    expect(result.sampled).toBe(true);
+    expect(result.rendered).toBe(1000);
+    expect(result.uncovered).toEqual({ shapes: [], colors: [] });
   });
 });
