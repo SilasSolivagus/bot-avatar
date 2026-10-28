@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAvatarSpec, buildGeometry, toGeometry } from "@botavatar/engine";
+import { buildAvatarSpec, buildGeometry, projectEye, toGeometry } from "@botavatar/engine";
 import type { SphereEyeRig, Surface } from "@botavatar/engine";
 import { organicBlob } from "@botavatar/pack-organic-blob";
 import { renderGeometry, renderSvg } from "../src/index.js";
@@ -221,6 +221,10 @@ const orbPack = {
     // The gallery's value. The renderer must not assume a default, and the existing
     // sphere assertions predate the split, so the fixture starts un-coupled.
     bodyCoupling: 0,
+    // Part of the pitch goes to the head as a nod; the rest tilts the eyes on the sphere.
+    bodyPitchFollow: 0.35,
+    // Rest tilt is parallel: both eyes lean the same way, never mirrored.
+    restTiltDeg: -4,
   },
 } as never;
 
@@ -236,49 +240,69 @@ describe("sphere rig", () => {
     [...svg.matchAll(/<rect ([^>]*?)\s*\/>/g)].map((match) => match[1]!);
   const attribute = (element: string, name: string) =>
     new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(element)?.[1] ?? "";
-  const matrix = (element: string) =>
-    attribute(element, "transform")
-      .slice("matrix(".length, -1)
-      .trim()
-      .split(/[\s,]+/)
-      .map(Number);
+  interface Capsule {
+    cx: number;
+    cy: number;
+    angle: number;
+    rect: string;
+    width: number;
+    height: number;
+    rx: number;
+  }
   /**
-   * The matrix columns are the capsule's own axes: the first is its width, the second
-   * its length, each already scaled by the projection. The drawn rect is unit-sized.
+   * Each eye is a `translate(cx,cy) rotate(angle)` group wrapping one rect drawn in
+   * local space. Decomposing the group is what proves the rect is a true capsule:
+   * its `rx` must stay half its width no matter how the projection foreshortens it.
    */
-  const width = (values: readonly number[]) => Math.hypot(values[0]!, values[1]!);
-  const height = (values: readonly number[]) => Math.hypot(values[2]!, values[3]!);
-  const drawnWidth = (element: string) => 2 * width(matrix(element));
-  const drawnLength = (element: string) => 2 * height(matrix(element));
+  const capsules = (svg: string): Capsule[] =>
+    [
+      ...svg.matchAll(
+        /<g transform="translate\(([^,]+),([^)]+)\) rotate\(([^)]+)\)"><rect ([^>]*?)\s*\/><\/g>/g,
+      ),
+    ].map((match) => {
+      const rect = match[4]!;
+      return {
+        cx: Number(match[1]),
+        cy: Number(match[2]),
+        angle: Number(match[3]),
+        rect,
+        width: Number(attribute(rect, "width")),
+        height: Number(attribute(rect, "height")),
+        rx: Number(attribute(rect, "rx")),
+      };
+    });
+  const drawnWidth = (capsule: Capsule) => capsule.width;
+  const drawnLength = (capsule: Capsule) => capsule.height;
   const gradientId = (svg: string) => svg.match(/<linearGradient id="([^"]+)"/)?.[1];
 
-  it("draws one capsule per eye with a projection matrix", () => {
+  it("draws one rotated capsule per eye, never a projection matrix on the rect", () => {
     const svg = renderGeometry(geometry, { size: 96 });
-    const capsules = svg.match(/<rect[^>]*rx="[^"]*"[^>]*transform="matrix\(/g) ?? [];
-    expect(capsules).toHaveLength(2);
+    expect(capsules(svg)).toHaveLength(2);
+    // A matrix on the rect is what turned the capsule into an ellipse: its columns
+    // squash the rounded ends. The rect must stay local and only the group rotates.
+    expect(svg).not.toContain("matrix(");
     expect(svg).toContain('viewBox="-60 -60 120 120"');
     expect(svg).toContain('width="96"');
     expect(svg).toContain('height="96"');
   });
 
-  it("draws the capsule at the rig's size, with the projection matrix carrying the scale", () => {
-    const drawnRects = rects(renderGeometry(geometry, { size: 96 }));
-    expect(drawnRects).toHaveLength(2);
-    for (const capsule of drawnRects) {
-      // The rect is a unit capsule in its own frame: matrix() already carries the
-      // position, the per-axis scale and the tilt. Drawing it at ±halfWidth applied
-      // the scale a second time and made every eye four times too large.
-      expect(attribute(capsule, "x")).toBe("-1");
-      expect(attribute(capsule, "y")).toBe("-1");
-      expect(attribute(capsule, "width")).toBe("2");
-      expect(attribute(capsule, "height")).toBe("2");
-      expect(attribute(capsule, "rx")).toBe("1");
-      expect(attribute(capsule, "fill")).toBe(geometry.ink.eyes);
+  it("draws each capsule at the projection's half-extents, as a real capsule", () => {
+    const drawn = capsules(renderGeometry(geometry, { size: 96 }));
+    expect(drawn).toHaveLength(2);
+    for (const capsule of drawn) {
+      // The rect is centred in its own frame; the group carries the position and
+      // rotation. `rx` is half the width, so the ends are semicircles, not corners.
+      expect(capsule.width).toBeGreaterThan(0);
+      expect(capsule.height).toBeGreaterThan(0);
+      expect(Number(attribute(capsule.rect, "x"))).toBeCloseTo(-capsule.width / 2, 6);
+      expect(Number(attribute(capsule.rect, "y"))).toBeCloseTo(-capsule.height / 2, 6);
+      expect(capsule.rx).toBeCloseTo(capsule.width / 2, 6);
+      expect(attribute(capsule.rect, "fill")).toBe(geometry.ink.eyes);
     }
-    // What the rect actually occupies after the transform: an 8 × 25 capsule in a
+    // What the rect actually occupies after the projection: an 8 × 25-ish capsule in a
     // 120 viewBox, the size of organic-blob's 7 × 24 rect eyes. The width is
-    // foreshortened by the eye's lateral angle — that is what the projection is for.
-    for (const [index, capsule] of drawnRects.entries()) {
+    // foreshortened by the eye's lateral angle on the sphere.
+    for (const [index, capsule] of drawn.entries()) {
       const eye = rig.eyes[index as 0 | 1];
       const lateral = (Math.abs(eye.lateralDeg) * Math.PI) / 180;
       expect(drawnWidth(capsule)).toBeCloseTo(2 * eye.halfWidth * Math.cos(lateral), 1);
@@ -286,9 +310,24 @@ describe("sphere rig", () => {
     }
   });
 
+  it("keeps rx at half the width at rest and when the far eye narrows", () => {
+    for (const yaw of [0, 30]) {
+      const drawn = capsules(looking(yaw));
+      for (const capsule of drawn) {
+        expect(capsule.rx).toBeCloseTo(capsule.width / 2, 6);
+      }
+      if (yaw === 30) {
+        // Positive yaw turns toward +x, where eye 1 sits; eye 1 becomes the far eye.
+        const far = drawn[1]!;
+        const near = drawn[0]!;
+        expect(far.width).toBeLessThan(near.width);
+      }
+    }
+  });
+
   it("narrows only the far eye at 40° of yaw, in both directions", () => {
     const widths = (yaw: number) =>
-      rects(
+      capsules(
         renderGeometry(
           { ...geometry, pose: { gaze: { yaw, pitch: 0 }, lidOpen: 1 } },
           { size: 96 },
@@ -296,7 +335,7 @@ describe("sphere rig", () => {
       ).map(drawnWidth);
     const rest = widths(0);
     // Positive yaw turns toward +x, where eye 1 sits: it is the far eye and narrows,
-    // while the near eye only foreshortens by cos(40° − 18°) / cos(18°) ≈ 2.5%.
+    // while the near eye only foreshortens by cos(40° − lateral) / cos(lateral).
     for (const [yaw, far] of [[40, 1], [-40, 0]] as const) {
       const near = far === 0 ? 1 : 0;
       const turned = widths(yaw);
@@ -306,32 +345,27 @@ describe("sphere rig", () => {
   });
 
   it("narrows the far eye when the gaze turns", () => {
-    const still = rects(renderGeometry(geometry, { size: 96 })).map(matrix);
-    const turned = rects(
-      renderGeometry(
-        { ...geometry, pose: { gaze: { yaw: 25, pitch: 0 }, lidOpen: 1 } },
-        { size: 96 },
-      ),
-    ).map(matrix);
+    const widths = (yaw: number) => capsules(looking(yaw)).map(drawnWidth);
+    const still = widths(0);
+    const turned = widths(25);
     // Positive yaw turns toward +x, where eye 1 sits: it becomes the far eye and
-    // narrows, while eye 0 swings toward the viewer and widens (until 2×lateral,
-    // past which even the near eye starts to foreshorten).
-    expect(width(turned[1]!)).toBeLessThan(width(still[1]!));
-    expect(width(turned[0]!)).toBeGreaterThan(width(still[0]!));
-    expect(width(turned[1]!)).toBeLessThan(width(turned[0]!));
+    // narrows, while eye 0 comes toward the viewer and widens.
+    expect(turned[1]!).toBeLessThan(still[1]!);
+    expect(turned[0]!).toBeGreaterThan(still[0]!);
+    expect(turned[1]!).toBeLessThan(turned[0]!);
   });
 
   it("squashes the capsules vertically when the lid closes", () => {
-    const still = rects(renderGeometry(geometry, { size: 96 })).map(matrix);
-    const shut = rects(
+    const still = capsules(renderGeometry(geometry, { size: 96 }));
+    const shut = capsules(
       renderGeometry(
         { ...geometry, pose: { ...geometry.pose, lidOpen: 0.25 } },
         { size: 96 },
       ),
-    ).map(matrix);
+    );
     for (const index of [0, 1] as const) {
-      expect(width(shut[index]!)).toBeCloseTo(width(still[index]!), 6);
-      expect(height(shut[index]!)).toBeCloseTo(height(still[index]!) * 0.25, 2);
+      expect(shut[index]!.width).toBeCloseTo(still[index]!.width, 6);
+      expect(shut[index]!.height).toBeCloseTo(still[index]!.height * 0.25, 2);
     }
   });
 
@@ -380,7 +414,7 @@ describe("sphere rig", () => {
     expect(working).toMatch(/<g class="[^"]*-eyes">/);
     // The eyes ride inside the body group, so head motion carries them.
     expect(working.indexOf("-body")).toBeLessThan(working.indexOf("-eyes"));
-    const eyes = working.match(/<g class="[^"]*-eyes">(.*?)<\/g>/)?.[1] ?? "";
+    const eyes = working.match(/<g class="[^"]*-eyes">(.*)<\/g><\/g>/)?.[1] ?? "";
     expect((eyes.match(/<rect/g) ?? [])).toHaveLength(2);
   });
 
@@ -395,12 +429,13 @@ describe("sphere rig", () => {
       { size: 96 },
     );
 
-  it("emits no rotate group when the computed turn is zero", () => {
+  it("emits no head wrapper when the computed turn and nod are zero", () => {
     // Coupling zero is today's output; coupling anything at rest is rest too. Neither
-    // may grow a wrapper group, or the un-coupled bytes would change.
+    // may grow a wrapper group, or the un-coupled bytes would change. The eyes always
+    // carry their own translate+rotate groups, so the wrapper check is specific.
     for (const svg of [coupled(0, 40), coupled(0.5, 0), coupled(1, 0)]) {
-      expect(svg).not.toContain("rotate(");
-      expect(svg).not.toContain("<g transform=");
+      expect(svg).not.toMatch(/<g transform="rotate\(/);
+      expect(svg).not.toMatch(/<g transform="translate\(0,/);
     }
   });
 
@@ -412,32 +447,24 @@ describe("sphere rig", () => {
 
   it("does not turn the eyes twice: the projection uses the reduced yaw", () => {
     // The head carries 20 and the projection carries 20. If the projection kept the
-    // full 40, these matrices would equal coupled(0, 40) instead.
-    expect(matrix(rects(coupled(0.5, 40))[0]!)).toEqual(matrix(rects(coupled(0, 20))[0]!));
-    expect(matrix(rects(coupled(0.5, 40))[1]!)).toEqual(matrix(rects(coupled(0, 20))[1]!));
+    // full 40, these capsules would equal coupled(0, 40) instead.
+    expect(capsules(coupled(0.5, 40))).toEqual(capsules(coupled(0, 20)));
   });
 
   it("leaves the eyes at rest when the head carries the whole turn", () => {
-    expect(rects(coupled(1, 40)).map(matrix)).toEqual(rects(coupled(0, 0)).map(matrix));
+    expect(capsules(coupled(1, 40))).toEqual(capsules(coupled(0, 0)));
   });
 
   it("projects the near eye at the reduced yaw, not the full one", () => {
     // Width belongs to the projection frame, so splitting the turn between head and
     // eyes changes it; what must stay put is the total. The double-turn bug — project
     // the full yaw and still rotate the body — would leave the width at yaw 40.
-    expect(drawnWidth(rects(coupled(0.5, 40))[0]!)).toBeCloseTo(
-      drawnWidth(rects(coupled(0, 20))[0]!),
-      6,
-    );
-    expect(drawnWidth(rects(coupled(1, 40))[0]!)).toBeCloseTo(
-      drawnWidth(rects(coupled(0, 0))[0]!),
-      6,
-    );
+    const widthAt = (svg: string) => capsules(svg)[0]!.width;
+    expect(widthAt(coupled(0.5, 40))).toBeCloseTo(widthAt(coupled(0, 20)), 6);
+    expect(widthAt(coupled(1, 40))).toBeCloseTo(widthAt(coupled(0, 0)), 6);
     // At 20° the near eye faces the viewer more squarely than at 40°, so the correct
     // split widens it a little. A full-yaw projection would keep it at the 40° width.
-    expect(drawnWidth(rects(coupled(0.5, 40))[0]!)).toBeGreaterThan(
-      drawnWidth(rects(coupled(0, 40))[0]!),
-    );
+    expect(widthAt(coupled(0.5, 40))).toBeGreaterThan(widthAt(coupled(0, 40)));
   });
 
   it("clamps the coupling between 0 and 1, so a pack cannot over- or under-turn", () => {
@@ -459,6 +486,32 @@ describe("sphere rig", () => {
     expect(working).toMatch(/<g transform="rotate\(20\)"><g class="[^"]*-body">/);
   });
 
+  /** The same geometry at a chosen pitch and body-pitch coupling, rendered idle. */
+  const pitched = (bodyPitchFollow: number, pitch: number) =>
+    renderGeometry(
+      {
+        ...geometry,
+        rig: { ...rig, bodyPitchFollow },
+        pose: { gaze: { yaw: 0, pitch }, lidOpen: 1 },
+      },
+      { size: 96 },
+    );
+
+  it("nods the head with pitch and leaves only the remainder to the eyes", () => {
+    const svg = pitched(0.35, 20);
+    // −20 × 0.35 × 0.6 = −4.2: the head goes up, then the eyes only need 13°.
+    expect(svg).toContain('<g transform="translate(0,-4.2)">');
+    expect(capsules(svg)).toEqual(capsules(pitched(0, 13)));
+  });
+
+  it("emits no nod group when nothing of the pitch is given to the head", () => {
+    for (const follow of [0, 0.00001]) {
+      // 0 is the legacy pack; 0.00001 × 20 × 0.6 rounds to −0.000, which must not
+      // grow an empty-looking wrapper either.
+      expect(pitched(follow, 20)).not.toMatch(/<g transform="translate\(0,/);
+    }
+  });
+
   /** The same geometry at a chosen gaze yaw, rendered idle. */
   const looking = (yaw: number) =>
     renderGeometry(
@@ -475,12 +528,15 @@ describe("sphere rig", () => {
   });
 
   it("fades the far eye only inside the rig's depth band", () => {
-    // The far eye's normal is yaw + 18° from the viewer: 86° at yaw 68, depth 0.0698,
-    // so alpha = (0.0698 − 0.02) / (0.12 − 0.02) = 0.498.
+    // Positive yaw makes eye 1 the far one. Its opacity is exactly the projection's
+    // depth mapped through the rig's fade band; the near eye stays fully opaque.
     const elements = rects(looking(68));
     expect(elements).toHaveLength(2);
     expect(attribute(elements[0]!, "opacity")).toBe("");
-    expect(Number(attribute(elements[1]!, "opacity"))).toBeCloseTo(0.498, 3);
+    expect(attribute(elements[1]!, "opacity")).not.toBe("");
+    const projected = projectEye(rig, { gaze: { yaw: 68, pitch: 0 }, lidOpen: 1 }, 1);
+    const alpha = (projected.depth - rig.cullAtDepth) / (rig.fadeFromDepth - rig.cullAtDepth);
+    expect(Number(attribute(elements[1]!, "opacity"))).toBeCloseTo(alpha, 3);
   });
 
   it("culls the far eye once its normal passes the cull depth", () => {

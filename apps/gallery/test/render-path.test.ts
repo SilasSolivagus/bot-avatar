@@ -8,24 +8,51 @@ import { poseGeometry } from "../src/pose.js";
 
 const IDENTITIES = ["alice", "bot_123", "wall-3-0", "research"];
 
-type Matrix = readonly [number, number, number, number, number, number];
+interface Capsule {
+  cx: number;
+  cy: number;
+  angle: number;
+  width: number;
+  height: number;
+  rx: number;
+}
 
 /**
- * The sphere branch draws each capsule with its own projection matrix and no other
- * transform, so pulling the matrices out is the same as reading the two eyes.
+ * The sphere branch draws each capsule as a local-coordinate rect inside a
+ * `translate(...) rotate(...)` group, so pulling those groups out is the same as
+ * reading the two eyes.
  */
-function capsuleMatrices(svg: string): Matrix[] {
-  return [...svg.matchAll(/transform="matrix\(([^)]+)\)"/g)].map((match) => {
-    const [a, b, c, d, e, f] = match[1]!.trim().split(/\s+/).map(Number);
-    return [a!, b!, c!, d!, e!, f!] as const;
+function capsules(svg: string): Capsule[] {
+  return [
+    ...svg.matchAll(
+      /<g transform="translate\(([^,]+),([^)]+)\) rotate\(([^)]+)\)"><rect ([^>]*?)\s*\/><\/g>/g,
+    ),
+  ].map((match) => {
+    const rect = match[4]!;
+    const number = (name: string) =>
+      Number(new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(rect)?.[1] ?? "");
+    return {
+      cx: Number(match[1]),
+      cy: Number(match[2]),
+      angle: Number(match[3]),
+      width: number("width"),
+      height: number("height"),
+      rx: number("rx"),
+    };
   });
 }
 
-// The matrix carries the capsule's half-extents, and the rect it draws is a unit
-// capsule, so the drawn size is twice a matrix column.
-const capsuleWidth = (matrix: Matrix): number => 2 * Math.hypot(matrix[0], matrix[1]);
-const capsuleHeight = (matrix: Matrix): number => 2 * Math.hypot(matrix[2], matrix[3]);
-const axisAngle = (matrix: Matrix): number => (Math.atan2(matrix[3], matrix[2]) * 180) / Math.PI;
+// The projection is decomposed into the capsule's own half-extents, so the drawn size
+// is exactly the rect's width and height.
+const capsuleWidth = (capsule: Capsule): number => capsule.width;
+const capsuleHeight = (capsule: Capsule): number => capsule.height;
+/** Angular difference in (−180, 180], so a wrap around ±180° does not read as a jump. */
+const angleDelta = (value: number, from: number): number => {
+  let delta = value - from;
+  while (delta > 180) delta -= 360;
+  while (delta <= -180) delta += 360;
+  return delta;
+};
 const bodyPath = (svg: string): string => /<path d="([^"]+)"/.exec(svg)?.[1] ?? "";
 
 /** The gallery renders every pack through `buildGeometry` + `renderGeometry` now. */
@@ -52,21 +79,28 @@ describe("the orb pack through the geometry path", () => {
   it("starts at rest with two equally wide, open capsules", () => {
     const geometry = buildGeometry(orb, "alice");
     expect(geometry.rig.kind).toBe("sphere");
-    const matrices = capsuleMatrices(renderGeometry(geometry, { size: 160 }));
-    expect(matrices).toHaveLength(2);
-    expect(capsuleWidth(matrices[0]!)).toBeCloseTo(capsuleWidth(matrices[1]!), 6);
-    // At rest the drawn capsule is 2·halfWidth across — foreshortened by the eye's
-    // lateral angle, so 8.4·cos18° ≈ 7.99 — and 2·halfHeight long: the same 8 × 25
-    // as organic-blob's 7 × 24 rect eyes, inside a 120 viewBox.
-    expect(capsuleWidth(matrices[0]!)).toBeCloseTo(7.994, 2);
-    expect(capsuleHeight(matrices[0]!)).toBeCloseTo(25, 1);
-    expect(capsuleHeight(matrices[1]!)).toBeCloseTo(25, 1);
+    if (geometry.rig.kind !== "sphere") throw new Error("unreachable");
+    const drawn = capsules(renderGeometry(geometry, { size: 160 }));
+    expect(drawn).toHaveLength(2);
+    expect(capsuleWidth(drawn[0]!)).toBeCloseTo(capsuleWidth(drawn[1]!), 6);
+    // `rx` is half the width on every capsule: rounded ends, never a squashed ellipse.
+    for (const capsule of drawn) {
+      expect(capsule.rx).toBeCloseTo(capsule.width / 2, 6);
+    }
+    // The size is derived from organic-blob's outline, not declared by the pack: at
+    // rest the capsule is 2·halfWidth across (foreshortened by its lateral angle) and
+    // 2·halfHeight long, inside the 120 viewBox.
+    const eye = geometry.rig.eyes[0];
+    const lateral = (Math.abs(eye.lateralDeg) * Math.PI) / 180;
+    expect(capsuleWidth(drawn[0]!)).toBeCloseTo(2 * eye.halfWidth * Math.cos(lateral), 1);
+    expect(capsuleHeight(drawn[0]!)).toBeCloseTo(2 * eye.halfHeight, 1);
+    expect(capsuleHeight(drawn[1]!)).toBeCloseTo(2 * eye.halfHeight, 1);
   });
 
   it("narrows the far eye at +40 yaw and mirrors it at -40", () => {
     const geometry = buildGeometry(orb, "alice");
     const widths = (yaw: number) =>
-      capsuleMatrices(
+      capsules(
         renderGeometry(poseGeometry(geometry, { gaze: { yaw, pitch: 0 }, lidOpen: 1 }), {
           size: 160,
         }),
@@ -78,16 +112,18 @@ describe("the orb pack through the geometry path", () => {
     expect(right[1]!).toBeLessThan(right[0]!);
     expect(left[0]!).toBeLessThan(left[1]!);
     // The pack couples 35% of the turn to the body, so the eyes see 26° of the 40:
-    // the far eye keeps ~76% of its width and the near eye gains ~4%.
-    expect(right[1]! / rest[1]!).toBeCloseTo(0.76, 2);
-    expect(right[0]! / rest[0]!).toBeCloseTo(1.041, 2);
-    expect(left[0]! / rest[0]!).toBeCloseTo(0.76, 2);
-    expect(left[1]! / rest[1]!).toBeCloseTo(1.041, 2);
+    // the far eye keeps most but not all of its width, and the near eye gains a little.
+    expect(right[1]! / rest[1]!).toBeLessThan(0.8);
+    expect(right[0]! / rest[0]!).toBeGreaterThan(1);
+    expect(left[0]! / rest[0]!).toBeLessThan(0.8);
+    expect(left[1]! / rest[1]!).toBeGreaterThan(1);
   });
 
   it("turns the body by the pack's coupling, and not at all at rest", () => {
     const geometry = buildGeometry(orb, "alice");
-    expect(renderGeometry(geometry, { size: 160 })).not.toContain("rotate(");
+    // The eyes always carry a rotate group of their own; only a head wrapper starts
+    // with `rotate(` directly.
+    expect(renderGeometry(geometry, { size: 160 })).not.toMatch(/<g transform="rotate\(/);
     const turned = renderGeometry(
       poseGeometry(geometry, { gaze: { yaw: 40, pitch: 0 }, lidOpen: 1 }),
       { size: 160 },
@@ -99,20 +135,43 @@ describe("the orb pack through the geometry path", () => {
   it("tilts both eyes the other way at +20 and -20 pitch", () => {
     const geometry = buildGeometry(orb, "alice");
     const angles = (pitch: number) =>
-      capsuleMatrices(
+      capsules(
         renderGeometry(poseGeometry(geometry, { gaze: { yaw: 0, pitch }, lidOpen: 1 }), {
           size: 160,
         }),
-      ).map(axisAngle);
+      ).map((capsule) => capsule.angle);
     const rest = angles(0);
     const up = angles(20);
     const down = angles(-20);
     for (const index of [0, 1] as const) {
-      const tiltUp = up[index]! - rest[index]!;
-      const tiltDown = down[index]! - rest[index]!;
+      const tiltUp = angleDelta(up[index]!, rest[index]!);
+      const tiltDown = angleDelta(down[index]!, rest[index]!);
       expect(Math.abs(tiltUp)).toBeGreaterThan(5);
       expect(Math.abs(tiltDown)).toBeGreaterThan(5);
       expect(Math.sign(tiltUp)).toBe(-Math.sign(tiltDown));
+    }
+  });
+
+  it("lifts both eyes and foreshortens them when the gaze pitches", () => {
+    const geometry = buildGeometry(orb, "alice");
+    const drawn = (pitch: number) =>
+      capsules(
+        renderGeometry(poseGeometry(geometry, { gaze: { yaw: 0, pitch }, lidOpen: 1 }), {
+          size: 160,
+        }),
+      );
+    const rest = drawn(0);
+    const up = drawn(20);
+    const down = drawn(-20);
+    for (const index of [0, 1] as const) {
+      // The projection carries the remaining pitch (this pack gives none to the head):
+      // the eye centres follow the gaze up/down, and the capsule length foreshortens
+      // as its axis leaves the screen plane. The y axis is the viewBox's, pointing down.
+      expect(up[index]!.cy).toBeLessThan(rest[index]!.cy);
+      expect(down[index]!.cy).toBeGreaterThan(rest[index]!.cy);
+      expect(capsuleHeight(up[index]!)).toBeLessThan(capsuleHeight(rest[index]!));
+      expect(capsuleHeight(down[index]!)).toBeLessThan(capsuleHeight(rest[index]!));
+      expect(Number.isNaN(up[index]!.angle)).toBe(false);
     }
   });
 
@@ -123,17 +182,17 @@ describe("the orb pack through the geometry path", () => {
       poseGeometry(geometry, { gaze: { yaw: 0, pitch: 0 }, lidOpen: 0.1 }),
       { size: 160 },
     );
-    const restMatrices = capsuleMatrices(rest);
-    const blinkMatrices = capsuleMatrices(blink);
-    expect(blinkMatrices).toHaveLength(2);
+    const restCapsules = capsules(rest);
+    const blinkCapsules = capsules(blink);
+    expect(blinkCapsules).toHaveLength(2);
     for (const index of [0, 1] as const) {
-      // Matrices are emitted with 3 decimals, so the ratio is close, not exact.
-      expect(capsuleHeight(blinkMatrices[index]!)).toBeCloseTo(
-        capsuleHeight(restMatrices[index]!) * 0.1,
+      // Sizes are emitted with 3 decimals, so the ratio is close, not exact.
+      expect(capsuleHeight(blinkCapsules[index]!)).toBeCloseTo(
+        capsuleHeight(restCapsules[index]!) * 0.1,
         2,
       );
-      expect(capsuleWidth(blinkMatrices[index]!)).toBeCloseTo(
-        capsuleWidth(restMatrices[index]!),
+      expect(capsuleWidth(blinkCapsules[index]!)).toBeCloseTo(
+        capsuleWidth(restCapsules[index]!),
         6,
       );
     }

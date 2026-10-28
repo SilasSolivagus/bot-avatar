@@ -242,8 +242,10 @@ export function renderSvg(spec: AvatarSpec, { size, state = "idle" }: RenderOpti
  * only holds rects. The body comes from the outline, the eyes from `projectEye`, and
  * the gradient from the ink.
  *
- * Each eye is a capsule rect centred on the origin — the projection matrix already
- * carries its translation, its per-axis scale and the eye's own tilt.
+ * Each eye is a true capsule in local space: the projection is decomposed into a
+ * rotation and two half-extents, and the rect is drawn at that size with its own
+ * rotation. The projection matrix is never handed to the rect — doing that squashes
+ * the rounded ends into an ellipse.
  */
 function renderSphere(
   geometry: AvatarGeometry,
@@ -270,9 +272,18 @@ function renderSphere(
   const coupling = Number.isFinite(rig.bodyCoupling) ? clamp01(rig.bodyCoupling) : 0;
   const turn = number(geometry.pose.gaze.yaw * coupling);
   const turned = turn !== "0";
+  // The same split for pitch: the head carries `bodyPitchFollow` as a vertical nod,
+  // the projection keeps the rest. The 0.6 is the head's lever arm in viewBox units.
+  const pitchFollow = Number.isFinite(rig.bodyPitchFollow) ? clamp01(rig.bodyPitchFollow!) : 0;
+  const nod = number(-geometry.pose.gaze.pitch * pitchFollow * 0.6);
+  const nodded = nod !== "0";
+  const anchorY = Number.isFinite(rig.anchorY) ? rig.anchorY! : 0;
   const eyePose = {
     ...geometry.pose,
-    gaze: { ...geometry.pose.gaze, yaw: geometry.pose.gaze.yaw * (1 - coupling) },
+    gaze: {
+      yaw: geometry.pose.gaze.yaw * (1 - coupling),
+      pitch: geometry.pose.gaze.pitch * (1 - pitchFollow),
+    },
   };
 
   let capsules = "";
@@ -282,15 +293,28 @@ function renderSphere(
     // the cull depth it is dropped entirely rather than drawn at zero opacity.
     const alpha = (projected.depth - rig.cullAtDepth) / (rig.fadeFromDepth - rig.cullAtDepth);
     if (alpha <= 0) continue;
-    const [a, b, c, d, e, f] = projected.matrix.map(number);
+    const [a, b, c, d, e, f] = projected.matrix;
+    // The matrix columns are the capsule's own axes: `(a, b)` is its width direction
+    // and `(c, d)` its length direction, each already scaled by the projection. The
+    // capsule's long axis is local +y, so the rotation must send +y onto `(c, d)`.
+    // SVG's `rotate(θ)` sends +y to `(−sin θ, cos θ)`, hence θ = atan2(−c, d). Using
+    // the width axis `(a, b)` instead gives a different angle whenever the columns
+    // are not orthogonal — exactly the pitch/tilt case, where the eye must lean.
+    const angle = (Math.atan2(-c, d) * 180) / Math.PI;
+    // Round the half-extent first and derive the full size from it: `width / 2` then
+    // equals `rx` exactly in the emitted markup, which is the capsule invariant.
+    const halfWidth = Number(Math.hypot(a, b).toFixed(3));
+    const halfLength = Number(Math.hypot(c, d).toFixed(3));
+    const cx = number(e);
+    // The face anchor moves the whole eye pair, both when resting and when turning.
+    const cy = number(f + anchorY);
     const opacity = alpha < 1 ? ` opacity="${alpha.toFixed(3)}"` : "";
-    // A unit capsule: the matrix already carries the half-extents, the tilt and the
-    // centre, so the rect must not repeat them. `rx="1"` on a 2×2 rect is a full
-    // semicircle end, which survives the anisotropic scale the projection applies.
     capsules +=
-      `<rect x="-1" y="-1" width="2" height="2" rx="1"` +
-      ` transform="matrix(${a} ${b} ${c} ${d} ${e} ${f})"` +
-      ` fill="${escapeAttribute(geometry.ink.eyes)}"${opacity} />`;
+      `<g transform="translate(${cx},${cy}) rotate(${number(angle)})">` +
+      `<rect x="${number(-halfWidth)}" y="${number(-halfLength)}"` +
+      ` width="${number(halfWidth * 2)}" height="${number(halfLength * 2)}"` +
+      ` rx="${number(halfWidth)}" fill="${escapeAttribute(geometry.ink.eyes)}"${opacity} />` +
+      `</g>`;
   }
 
   return (
@@ -298,8 +322,10 @@ function renderSphere(
     ` width="${pixels}" height="${pixels}" aria-hidden="true">` +
     (working ? workingStyle(geometry, id) : "") +
     `<defs>${inkGradient(geometry, id)}</defs>` +
-    // The turn wraps the animated body group rather than sharing it: the working
-    // keyframes set `transform`, and a static transform on the same element loses.
+    // The nod and the turn wrap the animated body group rather than sharing it: the
+    // working keyframes set `transform`, and a static transform on the same element
+    // loses. A zero offset emits no group, so the un-nodding bytes stay as they were.
+    (nodded ? `<g transform="translate(0,${nod})">` : "") +
     (turned ? `<g transform="rotate(${turn})">` : "") +
     `<g${working ? ` class="${id}-body"` : ""}>` +
     `<path d="${escapeAttribute(path)}" fill="url(#${id}-fill)" />` +
@@ -307,6 +333,7 @@ function renderSphere(
     `<g${working ? ` class="${id}-eyes"` : ""}>${capsules}</g>` +
     `</g>` +
     (turned ? `</g>` : "") +
+    (nodded ? `</g>` : "") +
     `</svg>`
   );
 }
