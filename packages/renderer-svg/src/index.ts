@@ -248,6 +248,11 @@ function renderSphere(
   rig: SphereEyeRig,
   { size, state = "idle" }: RenderOptions,
 ): string {
+  // The sphere branch paints an ink-only gradient. Refuse rather than silently drop
+  // material a pack asked for: a surfaced sphere pack must not render flat unnoticed.
+  if (geometry.surface) {
+    throw new Error("renderGeometry: sphere rigs do not support surface material yet");
+  }
   const pixels = Math.max(1, Math.round(size));
   const working = state === "working";
   const id = geometryId(geometry);

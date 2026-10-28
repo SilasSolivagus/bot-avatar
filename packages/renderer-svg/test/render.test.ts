@@ -321,6 +321,19 @@ describe("sphere rig", () => {
     expect(renderGeometry(pink, { size: 48 })).toContain('fill="#FF00AA"');
   });
 
+  it("refuses a sphere rig that declares surface material instead of rendering it flat", () => {
+    const surfaced = {
+      ...geometry,
+      surface: {
+        stops: [
+          { offset: 0, color: "#FFFFFF" },
+          { offset: 1, color: "#000000" },
+        ],
+      },
+    };
+    expect(() => renderGeometry(surfaced, { size: 96 })).toThrow(/surface material/i);
+  });
+
   it("animates the body group and a separate eye group in the working state", () => {
     const idle = renderGeometry(geometry, { size: 96 });
     expect(idle).not.toContain("<style");

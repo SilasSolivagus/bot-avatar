@@ -7,6 +7,10 @@ import type { StylePack } from "./spec.js";
  * v2 入口：由 pack + 身份直接得到几何。
  * `rect` 眼睛的包走 v1 适配器，输出与 renderSvg 完全一致；
  * `sphere` 眼睛的包构造球面 rig，由渲染器按注视角投影。
+ *
+ * A sphere pack is geometry-only: `renderSvg` cannot take one, because
+ * `AvatarSpec.eyes` holds rects. `buildGeometry` is its entry point — do not try
+ * `buildAvatarSpec` on an orb pack, whose eye block has no v1 `rotation`.
  */
 export function buildGeometry(pack: StylePack, identity: string): AvatarGeometry {
   // v1 的 `EyeGeometry` 还没有球面成员，所以这里用一次 cast 读 `kind`。
